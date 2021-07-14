@@ -106,6 +106,15 @@ public interface FixtureConfiguration<T> {
     FixtureConfiguration<T> withSubtypes(Class<? extends T>... subtypes);
 
     /**
+     * Configures the fixture for state stored aggregates.
+     * This will register an in-memory {@link org.axonframework.commandhandling.model.Repository} with this fixture.
+     * Should be used before calling {@link FixtureConfiguration#givenState(Supplier)} or {@link FixtureConfiguration#givenCommands(List)} (Supplier)}.
+     *
+     * @return the current FixtureConfiguration, for fluent interfacing
+     */
+    FixtureConfiguration<T> useStateStorage();
+
+    /**
      * Registers an arbitrary {@code repository} with the fixture. The repository must be wired
      * with the Event Store of this test fixture.
      * <p/>
@@ -194,26 +203,30 @@ public interface FixtureConfiguration<T> {
     FixtureConfiguration<T> registerParameterResolverFactory(ParameterResolverFactory parameterResolverFactory);
 
     /**
-     * Register a command dispatch interceptor which will always be invoked before a command is dispatched on the
-     * command bus to perform a task specified in the interceptor. For example by adding
-     * {@link MetaData} or throwing an exception based on the command.
+     * Register a {@link MessageDispatchInterceptor} for {@link CommandMessage}s which will be invoked before any
+     * command is dispatched on the {@link CommandBus} to perform a task specified in the interceptor. For example by
+     * adding {@link MetaData} or throwing an exception based on the command.
      *
-     * @param commandDispatchInterceptor the command dispatch interceptor to be added to the command bus
+     * @param commandDispatchInterceptor the {@link MessageDispatchInterceptor} for {@link CommandMessage}s to be added
+     *                                   to this fixture's {@link CommandBus}
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration<T> registerCommandDispatchInterceptor(
-            MessageDispatchInterceptor<? super CommandMessage<?>> commandDispatchInterceptor);
+            MessageDispatchInterceptor<? super CommandMessage<?>> commandDispatchInterceptor
+    );
 
     /**
-     * Register a command handler interceptor which may be invoked before or after the command has been dispatched on
-     * the command bus to perform a task specified in the interceptor. It could for example block the command for
-     * security reasons or add auditing to the command bus
+     * Register a {@link MessageHandlerInterceptor} for {@link CommandMessage}s which will be invoked before or after
+     * the command has been dispatched on the {@link CommandBus} to perform a task specified in the interceptor. It
+     * could for example block the command for security reasons or add auditing to the command bus
      *
-     * @param commandHandlerInterceptor the command handler interceptor to be added to the command bus
+     * @param commandHandlerInterceptor the {@link MessageHandlerInterceptor} for {@link CommandMessage}s to be added to
+     *                                  this fixture's {@link CommandBus}
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration<T> registerCommandHandlerInterceptor(
-            MessageHandlerInterceptor<? super CommandMessage<?>> commandHandlerInterceptor);
+            MessageHandlerInterceptor<? super CommandMessage<?>> commandHandlerInterceptor
+    );
 
     /**
      * Registers a deadline dispatch interceptor which will always be invoked before a deadline is dispatched
@@ -319,8 +332,8 @@ public interface FixtureConfiguration<T> {
     TestExecutor<T> givenState(Supplier<T> aggregateState);
 
     /**
-     * Indicates that no relevant activity has occurred in the past. The behavior of this method is identical to giving
-     * no events in the {@link #given(java.util.List)} method.
+     * Indicates that no relevant activities like commands or events have occurred in the past.
+     * This also means that no previous state is present in the repository.
      *
      * @return a TestExecutor instance that can execute the test with this configuration
      *

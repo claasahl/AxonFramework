@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2021. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import org.axonframework.eventhandling.tokenstore.TokenStore;
 import org.axonframework.eventsourcing.AggregateFactory;
 import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.messaging.ScopeAwareProvider;
 import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.MessageHandler;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
@@ -78,6 +79,7 @@ import org.springframework.beans.factory.support.ManagedList;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.DeferredImportSelector;
 import org.springframework.context.annotation.ImportBeanDefinitionRegistrar;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -192,8 +194,9 @@ public class SpringAxonAutoConfigurer implements ImportBeanDefinitionRegistrar, 
                 () -> genericBeanDefinition(SpringResourceInjector.class).getBeanDefinition()
         );
         configurer.configureResourceInjector(c -> getBean(resourceInjector, c));
-        registerComponent(EventScheduler.class, configurer, Configuration::eventScheduler);
+        registerComponent(ScopeAwareProvider.class, configurer);
         registerComponent(DeadlineManager.class, configurer, Configuration::deadlineManager);
+        registerComponent(EventScheduler.class, configurer, Configuration::eventScheduler);
 
         EventProcessingModule eventProcessingModule = new EventProcessingModule();
         Optional<String> eventProcessingConfigurerOptional = findComponent(EventProcessingConfigurer.class);
@@ -244,8 +247,15 @@ public class SpringAxonAutoConfigurer implements ImportBeanDefinitionRegistrar, 
     }
 
     private void registerEventUpcasters(Configurer configurer) {
+        //noinspection ConstantConditions - suppressing ConfigurableListableBeanFactory#getType null warning
         Arrays.stream(beanFactory.getBeanNamesForType(EventUpcaster.class))
-              .forEach(name -> configurer.registerEventUpcaster(c -> getBean(name, c)));
+              .collect(Collectors.toMap(
+                      upcasterBeanName -> upcasterBeanName,
+                      upcasterBeanName -> beanFactory.getType(upcasterBeanName)
+              ))
+              .entrySet().stream()
+              .sorted(Map.Entry.comparingByValue(AnnotationAwareOrderComparator.INSTANCE))
+              .forEach(upcasterEntry -> configurer.registerEventUpcaster(c -> getBean(upcasterEntry.getKey(), c)));
     }
 
     @SuppressWarnings("unchecked")

@@ -18,9 +18,18 @@ package org.axonframework.config;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.transaction.TransactionManager;
-import org.axonframework.eventhandling.*;
+import org.axonframework.eventhandling.ErrorHandler;
+import org.axonframework.eventhandling.EventBus;
+import org.axonframework.eventhandling.EventHandlerInvoker;
+import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.eventhandling.EventProcessor;
+import org.axonframework.eventhandling.ListenerInvocationErrorHandler;
+import org.axonframework.eventhandling.LoggingErrorHandler;
+import org.axonframework.eventhandling.TrackedEventMessage;
+import org.axonframework.eventhandling.TrackingEventProcessorConfiguration;
 import org.axonframework.eventhandling.async.SequencingPolicy;
 import org.axonframework.eventhandling.async.SequentialPerAggregatePolicy;
+import org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor;
 import org.axonframework.eventhandling.tokenstore.TokenStore;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageHandlerInterceptor;
@@ -239,6 +248,17 @@ public interface EventProcessingConfigurer {
      * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
      */
     EventProcessingConfigurer usingTrackingEventProcessors();
+
+    /**
+     * Defaults Event Processors builders to use {@link PooledStreamingEventProcessor}.
+     * <p>
+     * The default behavior depends on the {@link EventBus} available in the {@link Configuration}. If the {@code
+     * EventBus} is a {@link StreamableMessageSource}, processors are Tracking by default. This method must be used to
+     * force the use of Pooled Streaming Processors, unless specifically overridden for individual processors.
+     *
+     * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
+     */
+    EventProcessingConfigurer usingPooledStreamingEventProcessors();
 
     /**
      * Registers a {@link org.axonframework.eventhandling.SubscribingEventProcessor} with given {@code name} within this
@@ -504,14 +524,114 @@ public interface EventProcessingConfigurer {
                                                          Function<Configuration, TransactionManager> transactionManagerBuilder);
 
     /**
+     * Register a {@link Function} that builds a {@link TrackingEventProcessorConfiguration} to be used by the {@link
+     * EventProcessor} corresponding to the given {@code name}.
+     *
+     * @param name                                       a {@link String} specifying the name of an {@link
+     *                                                   EventProcessor}
+     * @param trackingEventProcessorConfigurationBuilder a {@link Function} that builds a {@link TrackingEventProcessorConfiguration}
+     * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
+     */
+    EventProcessingConfigurer registerTrackingEventProcessorConfiguration(
+            String name,
+            Function<Configuration, TrackingEventProcessorConfiguration> trackingEventProcessorConfigurationBuilder
+    );
+
+    /**
      * Register a {@link Function} that builds a {@link TrackingEventProcessorConfiguration} to use as the default.
      *
-     * @param trackingEventProcessorConfigurationBuilder a {@link Function} that builds a
-     *                                                   {@link TrackingEventProcessorConfiguration}
+     * @param trackingEventProcessorConfigurationBuilder a {@link Function} that builds a {@link TrackingEventProcessorConfiguration}
      * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
      */
     EventProcessingConfigurer registerTrackingEventProcessorConfiguration(
             Function<Configuration, TrackingEventProcessorConfiguration> trackingEventProcessorConfigurationBuilder
+    );
+
+    /**
+     * Registers a {@link PooledStreamingEventProcessor} in this {@link EventProcessingConfigurer}. The processor will
+     * receive the given {@code name}.
+     *
+     * @param name the name of the {@link PooledStreamingEventProcessor} being registered
+     * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
+     */
+    default EventProcessingConfigurer registerPooledStreamingEventProcessor(String name) {
+        return registerPooledStreamingEventProcessor(name, c -> {
+            EventBus eventBus = c.eventBus();
+            if (!(eventBus instanceof StreamableMessageSource)) {
+                throw new AxonConfigurationException(
+                        "Cannot create Pooled Streaming Event Processor with name '" + name + "'. " +
+                                "The available EventBus does not support tracking processors."
+                );
+            }
+            //noinspection unchecked
+            return (StreamableMessageSource<TrackedEventMessage<?>>) eventBus;
+        });
+    }
+
+    /**
+     * Registers a {@link PooledStreamingEventProcessor} in this {@link EventProcessingConfigurer}. The processor will
+     * receive the given {@code name} and use the outcome of the {@code messageSource} as the {@link
+     * StreamableMessageSource}.
+     *
+     * @param name          the name of the {@link PooledStreamingEventProcessor} being registered
+     * @param messageSource constructs a {@link StreamableMessageSource} to be used by the {@link
+     *                      PooledStreamingEventProcessor}
+     * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
+     */
+    default EventProcessingConfigurer registerPooledStreamingEventProcessor(
+            String name,
+            Function<Configuration, StreamableMessageSource<TrackedEventMessage<?>>> messageSource
+    ) {
+        return registerPooledStreamingEventProcessor(name, messageSource, PooledStreamingProcessorConfiguration.noOp());
+    }
+
+    /**
+     * Registers a {@link PooledStreamingEventProcessor} in this {@link EventProcessingConfigurer}. The processor will
+     * receive the given {@code name}  and use the outcome of the {@code messageSource} as the {@link
+     * StreamableMessageSource}.
+     * <p>
+     * The {@code processorConfiguration} will be used to further configure the {@code PooledStreamingEventProcessor}
+     * upon construction. Note that the {@code processorConfiguration} will override any configuration set through the
+     * {@link #registerPooledStreamingEventProcessorConfiguration(PooledStreamingProcessorConfiguration)} and {@link
+     * #registerPooledStreamingEventProcessorConfiguration(String, PooledStreamingProcessorConfiguration)}.
+     *
+     * @param name                   the name of the {@link PooledStreamingEventProcessor} being registered
+     * @param messageSource          constructs a {@link StreamableMessageSource} to be used by the {@link
+     *                               PooledStreamingEventProcessor}
+     * @param processorConfiguration allows further customization of the {@link PooledStreamingEventProcessor} under
+     *                               construction. The given {@link Configuration} can be used to extract components and
+     *                               use them in the {@link PooledStreamingEventProcessor.Builder}
+     * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
+     */
+    EventProcessingConfigurer registerPooledStreamingEventProcessor(
+            String name,
+            Function<Configuration, StreamableMessageSource<TrackedEventMessage<?>>> messageSource,
+            PooledStreamingProcessorConfiguration processorConfiguration
+    );
+
+    /**
+     * Register a default {@link PooledStreamingProcessorConfiguration} to be used when constructing every {@link
+     * PooledStreamingEventProcessor}.
+     *
+     * @param pooledStreamingProcessorConfiguration configuration used when constructing every {@link
+     *                                              PooledStreamingEventProcessor}
+     * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
+     */
+    EventProcessingConfigurer registerPooledStreamingEventProcessorConfiguration(
+            PooledStreamingProcessorConfiguration pooledStreamingProcessorConfiguration
+    );
+
+    /**
+     * Register a {@link PooledStreamingProcessorConfiguration} to be used when constructing a {@link
+     * PooledStreamingEventProcessor} with {@code name}.
+     *
+     * @param name                                  the name of an {@link PooledStreamingEventProcessor}
+     * @param pooledStreamingProcessorConfiguration configuration used when constructing a {@link PooledStreamingEventProcessor}
+     *                                              with the given {@code name}
+     * @return the current {@link EventProcessingConfigurer} instance, for fluent interfacing
+     */
+    EventProcessingConfigurer registerPooledStreamingEventProcessorConfiguration(
+            String name, PooledStreamingProcessorConfiguration pooledStreamingProcessorConfiguration
     );
 
     /**
@@ -531,5 +651,34 @@ public interface EventProcessingConfigurer {
          * @return an {@link EventProcessor}
          */
         EventProcessor build(String name, Configuration configuration, EventHandlerInvoker eventHandlerInvoker);
+    }
+
+    /**
+     * Contract defining {@link PooledStreamingEventProcessor.Builder} based configuration when constructing a {@link
+     * PooledStreamingEventProcessor}.
+     */
+    @FunctionalInterface
+    interface PooledStreamingProcessorConfiguration extends
+            BiFunction<Configuration, PooledStreamingEventProcessor.Builder, PooledStreamingEventProcessor.Builder> {
+
+        /**
+         * Returns a configuration that applies the given {@code other} configuration after applying {@code this}. Any
+         * configuration set by the {@code other} will override changes by {@code this} instance.
+         *
+         * @param other The configuration to apply after applying this
+         * @return a configuration that applies both this and then the other configuration
+         */
+        default PooledStreamingProcessorConfiguration andThen(PooledStreamingProcessorConfiguration other) {
+            return (config, builder) -> other.apply(config, this.apply(config, builder));
+        }
+
+        /**
+         * A {@link PooledStreamingProcessorConfiguration} which does not add any configuration.
+         *
+         * @return a {@link PooledStreamingProcessorConfiguration} which does not add any configuration
+         */
+        static PooledStreamingProcessorConfiguration noOp() {
+            return (config, builder) -> builder;
+        }
     }
 }

@@ -21,71 +21,78 @@ import org.axonframework.messaging.InterceptorChain;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
 import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import javax.validation.Validation;
 import javax.validation.ValidatorFactory;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
+ * Test class validating the {@link BeanValidationInterceptor}.
+ *
  * @author Allard Buijze
  */
 class BeanValidationInterceptorTest {
 
     private BeanValidationInterceptor<Message<?>> testSubject;
-    private InterceptorChain mockInterceptorChain;
+
+    private InterceptorChain interceptorChain;
     private UnitOfWork<Message<?>> uow;
 
     @BeforeEach
     void setUp() {
         testSubject = new BeanValidationInterceptor<>();
-        mockInterceptorChain = mock(InterceptorChain.class);
+
+        interceptorChain = mock(InterceptorChain.class);
         uow = new DefaultUnitOfWork<>(null);
     }
 
     @Test
     void testValidateSimpleObject() throws Exception {
         uow.transformMessage(m -> new GenericMessage<>("Simple instance"));
-        testSubject.handle(uow, mockInterceptorChain);
-        verify(mockInterceptorChain).proceed();
+
+        testSubject.handle(uow, interceptorChain);
+
+        verify(interceptorChain).proceed();
     }
 
     @Test
     void testValidateAnnotatedObject_IllegalNullValue() throws Exception {
         uow.transformMessage(m -> new GenericMessage<Object>(new JSR303AnnotatedInstance(null)));
         try {
-            testSubject.handle(uow, mockInterceptorChain);
+            testSubject.handle(uow, interceptorChain);
             fail("Expected exception");
         } catch (JSR303ViolationException e) {
             assertFalse(e.getViolations().isEmpty());
         }
-        verify(mockInterceptorChain, never()).proceed();
+        verify(interceptorChain, never()).proceed();
     }
 
     @Test
     void testValidateAnnotatedObject_LegalValue() throws Exception {
         uow.transformMessage(m -> new GenericMessage<>(new JSR303AnnotatedInstance("abc")));
-        testSubject.handle(uow, mockInterceptorChain);
-        verify(mockInterceptorChain).proceed();
+
+        testSubject.handle(uow, interceptorChain);
+
+        verify(interceptorChain).proceed();
     }
 
     @Test
     void testValidateAnnotatedObject_IllegalValue() throws Exception {
         uow.transformMessage(m -> new GenericMessage<Object>(new JSR303AnnotatedInstance("bea")));
+
         try {
-            testSubject.handle(
-                    uow, mockInterceptorChain);
+            testSubject.handle(uow, interceptorChain);
             fail("Expected exception");
         } catch (JSR303ViolationException e) {
             assertFalse(e.getViolations().isEmpty());
         }
-        verify(mockInterceptorChain, never()).proceed();
+
+        verify(interceptorChain, never()).proceed();
     }
 
     @Test
@@ -93,12 +100,13 @@ class BeanValidationInterceptorTest {
         uow.transformMessage(m -> new GenericMessage<Object>(new JSR303AnnotatedInstance("abc")));
         ValidatorFactory mockValidatorFactory = spy(Validation.buildDefaultValidatorFactory());
         testSubject = new BeanValidationInterceptor<>(mockValidatorFactory);
-        testSubject.handle(uow, mockInterceptorChain);
+        testSubject.handle(uow, interceptorChain);
         verify(mockValidatorFactory).getValidator();
     }
 
     public static class JSR303AnnotatedInstance {
 
+        @SuppressWarnings({"FieldCanBeLocal", "FieldMayBeFinal", "unused"})
         @Pattern(regexp = "ab.*")
         @NotNull
         private String notNull;

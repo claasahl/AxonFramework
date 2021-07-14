@@ -292,9 +292,31 @@ public class CommandHandlerInvoker implements EventHandler<CommandHandlingEntry>
                                                                                   eventStore,
                                                                                   repositoryProvider,
                                                                                   trigger);
-            firstLevelCache.put(aggregate.identifierAsString(), aggregate);
-            cache.put(aggregate.identifierAsString(), new AggregateCacheEntry<>(aggregate));
+
+            //in case of loadOrCreate,
+            // identifier is null, therefore this special case is handled in loadOrCreate method
+            if (aggregate.identifierAsString() != null) {
+                firstLevelCache.put(aggregate.identifierAsString(), aggregate);
+                cache.put(aggregate.identifierAsString(), new AggregateCacheEntry<>(aggregate));
+            }
+
             return aggregate;
+        }
+
+        @Override
+        public Aggregate<T> loadOrCreate(String aggregateIdentifier, Callable<T> factoryMethod) throws Exception {
+            try {
+                return load(aggregateIdentifier);
+            } catch (AggregateNotFoundException ex) {
+                Aggregate<T> newInstance = newInstance(factoryMethod);
+                firstLevelCache.put(aggregateIdentifier, (EventSourcedAggregate<T>) newInstance);
+                cache.put(aggregateIdentifier, new AggregateCacheEntry<>((EventSourcedAggregate<T>) newInstance));
+                
+                return newInstance;
+            } catch (Exception e) {
+                logger.debug("Exception occurred while trying to load/create an aggregate. ", e);
+                throw e;
+            }
         }
 
         private void removeFromCache(String aggregateIdentifier) {

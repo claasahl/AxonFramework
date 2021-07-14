@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2021. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import io.axoniq.axonserver.connector.event.AppendEventsTransaction;
 import io.axoniq.axonserver.connector.event.EventChannel;
 import io.axoniq.axonserver.connector.event.EventStream;
 import io.axoniq.axonserver.grpc.event.Event;
+import io.grpc.Status;
 import org.axonframework.axonserver.connector.AxonServerConfiguration;
 import org.axonframework.axonserver.connector.AxonServerConnectionManager;
 import org.axonframework.axonserver.connector.util.GrpcMetaDataConverter;
@@ -145,6 +146,14 @@ public class AxonServerEventStore extends AbstractEventStore {
      */
     public StreamableMessageSource<TrackedEventMessage<?>> createStreamableMessageSourceForContext(String context) {
         return new AxonServerMessageSource(storageEngine().createInstanceForContext(context));
+    }
+
+    @Override
+    protected Optional<DomainEventMessage<?>> handleSnapshotReadingError(String aggregateIdentifier, Throwable e) {
+        if (Status.fromThrowable(e).getCode() != Status.Code.UNKNOWN) {
+            throw new EventStoreException("Error occurred while communicating with Axon Server", e);
+        }
+        return super.handleSnapshotReadingError(aggregateIdentifier, e);
     }
 
     /**
@@ -460,7 +469,8 @@ public class AxonServerEventStore extends AbstractEventStore {
                                      logger.warn("Error occurred while creating a snapshot", e);
                                  } else if (c != null) {
                                      if (c.getSuccess()) {
-                                         logger.info("Snapshot created");
+                                         logger.debug("Snapshot created for aggregate type {}, identifier {}",
+                                                      snapshot.getType(), snapshot.getAggregateIdentifier());
                                      } else {
                                          logger.warn("Snapshot creation failed for unknown reason. "
                                                              + "Check server logs for details.");
@@ -507,7 +517,11 @@ public class AxonServerEventStore extends AbstractEventStore {
         }
 
         public QueryResultStream query(String query, boolean liveUpdates) {
-            throw new UnsupportedOperationException("Not supported in this connector, yet");
+            return new QueryResultStreamAdapter(
+                    connectionManager.getConnection(context)
+                                     .eventChannel()
+                                     .queryEvents(query, liveUpdates)
+            );
         }
 
         @Override

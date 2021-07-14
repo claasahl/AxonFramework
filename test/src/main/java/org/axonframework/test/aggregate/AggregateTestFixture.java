@@ -24,6 +24,7 @@ import org.axonframework.commandhandling.CommandResultMessage;
 import org.axonframework.commandhandling.GenericCommandMessage;
 import org.axonframework.commandhandling.SimpleCommandBus;
 import org.axonframework.common.Assert;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.Registration;
 import org.axonframework.deadline.DeadlineMessage;
@@ -120,14 +121,13 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
     private final Class<T> aggregateType;
     private final Set<Class<? extends T>> subtypes = new HashSet<>();
     private final SimpleCommandBus commandBus;
-    private final List<MessageDispatchInterceptor<? super CommandMessage<?>>> commandDispatchInterceptors = new ArrayList<>();
-    private final List<MessageHandlerInterceptor<? super CommandMessage<?>>> commandHandlerInterceptors = new ArrayList<>();
     private final EventStore eventStore;
     private final List<FieldFilter> fieldFilters = new ArrayList<>();
     private final List<Object> resources = new ArrayList<>();
+    private boolean useStateStorage;
     private RepositoryProvider repositoryProvider;
     private IdentifierValidatingRepository<T> repository;
-    private StubDeadlineManager deadlineManager;
+    private final StubDeadlineManager deadlineManager;
     private String aggregateIdentifier;
     private Deque<DomainEventMessage<?>> givenEvents;
     private Deque<DomainEventMessage<?>> storedEvents;
@@ -165,6 +165,12 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
     @Override
     public final FixtureConfiguration<T> withSubtypes(Class<? extends T>... subtypes) {
         this.subtypes.addAll(Arrays.asList(subtypes));
+        return this;
+    }
+
+    @Override
+    public FixtureConfiguration<T> useStateStorage() {
+        this.useStateStorage = true;
         return this;
     }
 
@@ -238,15 +244,17 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
 
     @Override
     public FixtureConfiguration<T> registerCommandDispatchInterceptor(
-            MessageDispatchInterceptor<? super CommandMessage<?>> commandDispatchInterceptor) {
-        this.commandDispatchInterceptors.add(commandDispatchInterceptor);
+            MessageDispatchInterceptor<? super CommandMessage<?>> commandDispatchInterceptor
+    ) {
+        this.commandBus.registerDispatchInterceptor(commandDispatchInterceptor);
         return this;
     }
 
     @Override
     public FixtureConfiguration<T> registerCommandHandlerInterceptor(
-            MessageHandlerInterceptor<? super CommandMessage<?>> commandHandlerInterceptor) {
-        this.commandHandlerInterceptors.add(commandHandlerInterceptor);
+            MessageHandlerInterceptor<? super CommandMessage<?>> commandHandlerInterceptor
+    ) {
+        this.commandBus.registerHandlerInterceptor(commandHandlerInterceptor);
         return this;
     }
 
@@ -306,21 +314,20 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
 
     @Override
     public TestExecutor<T> givenNoPriorActivity() {
-        return given(Collections.emptyList());
+        ensureRepositoryConfiguration();
+        clearGivenWhenState();
+        return this;
     }
 
     @Override
     public TestExecutor<T> givenState(Supplier<T> aggregate) {
+        if (this.repository == null) {
+            this.useStateStorage();
+        }
+
+        ensureRepositoryConfiguration();
         clearGivenWhenState();
         DefaultUnitOfWork.startAndGet(null).execute(() -> {
-            if (repository == null) {
-                registerRepository(new InMemoryRepository<>(aggregateType,
-                                                            subtypes,
-                                                            eventStore,
-                                                            getParameterResolverFactory(),
-                                                            getHandlerDefinition(),
-                                                            getRepositoryProvider()));
-            }
             try {
                 repository.newInstance(aggregate::get);
             } catch (Exception e) {
@@ -341,6 +348,11 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
 
     @Override
     public TestExecutor<T> andGiven(List<?> domainEvents) {
+        if (this.useStateStorage) {
+            throw new AxonConfigurationException(
+                    "Given events not supported, because the fixture is configured to use state storage");
+        }
+
         for (Object event : domainEvents) {
             Object payload = event;
             MetaData metaData = null;
@@ -484,7 +496,6 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
 
     private void finalizeConfiguration() {
         registerAggregateCommandHandlers();
-        registerCommandInterceptors();
         explicitCommandHandlersSet = true;
     }
 
@@ -507,16 +518,29 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
     }
 
     private void ensureRepositoryConfiguration() {
-        if (repository == null) {
+        if (repository != null) {
+            return;
+        }
+
+        if (this.useStateStorage) {
+            this.registerRepository(new InMemoryRepository<>(
+                    aggregateType,
+                    subtypes,
+                    eventStore,
+                    getParameterResolverFactory(),
+                    getHandlerDefinition(),
+                    getRepositoryProvider()));
+        } else {
             AggregateModel<T> aggregateModel = aggregateModel();
-            registerRepository(EventSourcingRepository.builder(aggregateType)
-                                                      .aggregateModel(aggregateModel)
-                                                      .aggregateFactory(new GenericAggregateFactory<>(aggregateModel))
-                                                      .eventStore(eventStore)
-                                                      .parameterResolverFactory(getParameterResolverFactory())
-                                                      .handlerDefinition(getHandlerDefinition())
-                                                      .repositoryProvider(getRepositoryProvider())
-                                                      .build());
+            this.registerRepository(EventSourcingRepository.builder(aggregateType)
+                                                           .aggregateModel(aggregateModel)
+                                                           .aggregateFactory(new GenericAggregateFactory<>(
+                                                                   aggregateModel))
+                                                           .eventStore(eventStore)
+                                                           .parameterResolverFactory(getParameterResolverFactory())
+                                                           .handlerDefinition(getHandlerDefinition())
+                                                           .repositoryProvider(getRepositoryProvider())
+                                                           .build());
         }
     }
 
@@ -542,11 +566,6 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
             registerRepositoryProvider(new DefaultRepositoryProvider());
         }
         return repositoryProvider;
-    }
-
-    private void registerCommandInterceptors() {
-        commandDispatchInterceptors.forEach(commandBus::registerDispatchInterceptor);
-        commandHandlerInterceptors.forEach(commandBus::registerHandlerInterceptor);
     }
 
     private void detectIllegalStateChanges(MatchAllFieldFilter fieldFilter, Aggregate<T> workingAggregate) {
