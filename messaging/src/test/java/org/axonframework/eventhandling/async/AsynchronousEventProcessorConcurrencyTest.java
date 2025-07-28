@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,10 @@
 package org.axonframework.eventhandling.async;
 
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.messaging.Message;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -30,9 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static java.util.Collections.singletonList;
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.axonframework.eventhandling.EventTestUtils.asEventMessage;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Allard Buijze
@@ -45,12 +42,12 @@ class AsynchronousEventProcessorConcurrencyTest {
     @BeforeEach
     void setUp() {
         executor = Executors.newCachedThreadPool();
-        testSubject = new AsynchronousEventProcessingStrategy(executor, Message::getPayload);
+        testSubject = new AsynchronousEventProcessingStrategy(executor, e -> Optional.of(e.getPayload()));
     }
 
     @Test
     @Timeout(value = EventsPublisher.EVENTS_COUNT, unit = TimeUnit.MILLISECONDS)
-    void testHandleEvents() throws InterruptedException {
+    void handleEvents() throws InterruptedException {
         final AtomicInteger counter = new AtomicInteger();
         Consumer<List<? extends EventMessage<?>>> processor = eventMessages -> counter.addAndGet(eventMessages.size());
 

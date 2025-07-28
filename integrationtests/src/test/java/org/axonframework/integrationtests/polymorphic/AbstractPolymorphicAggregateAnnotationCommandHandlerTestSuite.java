@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,32 +16,36 @@
 
 package org.axonframework.integrationtests.polymorphic;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.EntityTransaction;
+import jakarta.persistence.Persistence;
 import org.axonframework.commandhandling.CommandBus;
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.commandhandling.NoHandlerForCommandException;
 import org.axonframework.commandhandling.SimpleCommandBus;
 import org.axonframework.commandhandling.gateway.CommandGateway;
 import org.axonframework.commandhandling.gateway.DefaultCommandGateway;
 import org.axonframework.common.transaction.Transaction;
 import org.axonframework.common.transaction.TransactionManager;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.Message;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
 import org.axonframework.modelling.command.AggregateAnnotationCommandHandler;
-import org.axonframework.modelling.command.Repository;
-import org.axonframework.modelling.command.RepositoryProvider;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
+import org.axonframework.modelling.command.CreationPolicy;
+import org.axonframework.modelling.command.LegacyRepository;
 import org.axonframework.modelling.command.inspection.AggregateModel;
 import org.axonframework.modelling.command.inspection.AggregateModellingException;
 import org.axonframework.modelling.command.inspection.AnnotatedAggregateMetaModelFactory;
 import org.junit.jupiter.api.*;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.EntityTransaction;
-import javax.persistence.Persistence;
 
 import static java.util.Arrays.asList;
 import static org.junit.jupiter.api.Assertions.*;
@@ -55,7 +59,7 @@ public abstract class AbstractPolymorphicAggregateAnnotationCommandHandlerTestSu
 
     private CommandBus commandBus;
     private CommandGateway commandGateway;
-    private Repository<ParentAggregate> repository;
+    private LegacyRepository<ParentAggregate> repository;
     private EntityManager entityManager;
     private TransactionManager transactionManager;
 
@@ -69,30 +73,38 @@ public abstract class AbstractPolymorphicAggregateAnnotationCommandHandlerTestSu
 
         transactionManager = new EntityManagerTransactionManager(entityManager);
 
-        commandBus = SimpleCommandBus.builder()
-                                     .transactionManager(transactionManager)
-                                     .build();
-        commandGateway = DefaultCommandGateway.builder()
-                                              .commandBus(commandBus)
-                                              .build();
+        commandBus = new SimpleCommandBus(transactionManager);
+        commandGateway = new DefaultCommandGateway(commandBus, new ClassBasedMessageTypeResolver());
 
-        AggregateModel<ParentAggregate> model = new AnnotatedAggregateMetaModelFactory()
-                .createModel(ParentAggregate.class,
-                             new HashSet<>(asList(Child1Aggregate.class, Child2Aggregate.class)));
+        Set<Class<? extends ParentAggregate>> subtypes =
+                new HashSet<>(asList(Child1Aggregate.class, Child2Aggregate.class));
+        AggregateModel<ParentAggregate> model =
+                new AnnotatedAggregateMetaModelFactory().createModel(ParentAggregate.class, subtypes);
 
-        repository = repository(ParentAggregate.class, model, entityManager);
+        repository = repository(ParentAggregate.class, subtypes, entityManager);
 
-        AggregateAnnotationCommandHandler<ParentAggregate> ch = AggregateAnnotationCommandHandler.<ParentAggregate>builder()
-                .aggregateType(ParentAggregate.class)
-                .aggregateModel(model)
-                .repository(repository)
-                .build();
-        ch.subscribe(commandBus);
+        AggregateAnnotationCommandHandler<ParentAggregate> ch =
+                AggregateAnnotationCommandHandler.<ParentAggregate>builder()
+                                                 .aggregateType(ParentAggregate.class)
+                                                 .aggregateModel(model)
+                                                 .repository(repository)
+                                                 .build();
+        commandBus.subscribe(ch);
     }
 
-    public abstract <T> Repository<T> repository(Class<T> aggregateType,
-                                                 AggregateModel<T> model,
-                                                 EntityManager entityManager);
+    /**
+     * Constructs a polymorphic {@link LegacyRepository} for the given root {@code aggregateType}.
+     *
+     * @param aggregateType The root aggregate type for the polymorphic {@link LegacyRepository}.
+     * @param subTypes      The subtypes of the given {@code aggregateType}, making the model supported by the
+     *                      {@link LegacyRepository} polymorphic/
+     * @param entityManager The entity manager required for state-stored polymorphic aggregates.
+     * @param <T>           The root type of the polymorphic aggregate.
+     * @return A polymorphic {@link LegacyRepository} for the given root {@code aggregateType}.
+     */
+    public abstract <T> LegacyRepository<T> repository(Class<T> aggregateType,
+                                                       Set<Class<? extends T>> subTypes,
+                                                       EntityManager entityManager);
 
     @AfterEach
     void tearDown() {
@@ -101,49 +113,49 @@ public abstract class AbstractPolymorphicAggregateAnnotationCommandHandlerTestSu
 
     @Test
     void createChild1() {
-        String id = commandGateway.sendAndWait(new CreateChild1Command("123"));
-        String result = commandGateway.sendAndWait(new CommonCommand(id));
+        String id = commandGateway.sendAndWait(new CreateChild1Command("123"), String.class);
+        String result = commandGateway.sendAndWait(new CommonCommand(id), String.class);
         assertEquals("Child1Aggregate123", result);
     }
 
     @Test
     void createChild2() {
-        String id = commandGateway.sendAndWait(new CreateChild2Command("123"));
-        String result = commandGateway.sendAndWait(new CommonCommand(id));
+        String id = commandGateway.sendAndWait(new CreateChild2Command("123"), String.class);
+        String result = commandGateway.sendAndWait(new CommonCommand(id), String.class);
         assertEquals("Child2Aggregate123", result);
     }
 
     @Test
     void factoryCreate() {
-        String id = commandGateway.sendAndWait(new CreateChildFactoryCommand("123", 1));
-        String result = commandGateway.sendAndWait(new CommonCommand(id));
+        String id = commandGateway.sendAndWait(new CreateChildFactoryCommand("123", 1), String.class);
+        String result = commandGateway.sendAndWait(new CommonCommand(id), String.class);
         assertEquals("Child1Aggregate123", result);
 
-        id = commandGateway.sendAndWait(new CreateChildFactoryCommand("456", 2));
-        result = commandGateway.sendAndWait(new CommonCommand(id));
+        id = commandGateway.sendAndWait(new CreateChildFactoryCommand("456", 2), String.class);
+        result = commandGateway.sendAndWait(new CommonCommand(id), String.class);
         assertEquals("Child2Aggregate456", result);
     }
 
     @Test
     void child1OnlyCommandOnAggregate2() {
-        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"));
-        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"));
-        String result = commandGateway.sendAndWait(new Child1OnlyCommand(c1Id));
+        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"), String.class);
+        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"), String.class);
+        String result = commandGateway.sendAndWait(new Child1OnlyCommand(c1Id), String.class);
         assertEquals("Child1Aggregate123", result);
         assertThrows(NoHandlerForCommandException.class, () -> commandGateway.sendAndWait(new Child1OnlyCommand(c2Id)));
     }
 
     @Test
     void parentEventAppliedFromChild() {
-        String id = commandGateway.sendAndWait(new CreateChild1Command("123"));
+        String id = commandGateway.sendAndWait(new CreateChild1Command("123"), String.class);
         commandGateway.sendAndWait(new FireParentEventCommand(id));
         assertAggregateState(id, "parent123");
     }
 
     @Test
     void childEventAppliedFromParent() {
-        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"));
-        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"));
+        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"), String.class);
+        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"), String.class);
         commandGateway.sendAndWait(new FireChildEventCommand(c1Id));
         commandGateway.sendAndWait(new FireChildEventCommand(c2Id));
         assertAggregateState(c1Id, "child1123");
@@ -152,30 +164,30 @@ public abstract class AbstractPolymorphicAggregateAnnotationCommandHandlerTestSu
 
     @Test
     void commandInterceptedByParentHandledByChild() {
-        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"));
-        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"));
-        String child1Result = commandGateway.sendAndWait(new InterceptedByParentCommand(c1Id, "state"));
-        String child2Result = commandGateway.sendAndWait(new InterceptedByParentCommand(c2Id, "state"));
+        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"), String.class);
+        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"), String.class);
+        String child1Result = commandGateway.sendAndWait(new InterceptedByParentCommand(c1Id, "state"), String.class);
+        String child2Result = commandGateway.sendAndWait(new InterceptedByParentCommand(c2Id, "state"), String.class);
         assertEquals("stateInterceptedByParentHandledByChild1", child1Result);
         assertEquals("stateInterceptedByParentHandledByChild2", child2Result);
     }
 
     @Test
     void commandInterceptedByChildHandledByParent() {
-        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"));
-        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"));
-        String child1Result = commandGateway.sendAndWait(new InterceptedByChildCommand(c1Id, "state"));
-        String child2Result = commandGateway.sendAndWait(new InterceptedByChildCommand(c2Id, "state"));
+        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"), String.class);
+        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"), String.class);
+        String child1Result = commandGateway.sendAndWait(new InterceptedByChildCommand(c1Id, "state"), String.class);
+        String child2Result = commandGateway.sendAndWait(new InterceptedByChildCommand(c2Id, "state"), String.class);
         assertEquals("stateInterceptedByChild1HandledByParent", child1Result);
         assertEquals("stateInterceptedByChild2HandledByParent", child2Result);
     }
 
     @Test
     void abstractCommandHandler() {
-        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"));
-        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"));
-        String child1Result = commandGateway.sendAndWait(new AbstractCommandHandlerCommand(c1Id));
-        String child2Result = commandGateway.sendAndWait(new AbstractCommandHandlerCommand(c2Id));
+        String c1Id = commandGateway.sendAndWait(new CreateChild1Command("123"), String.class);
+        String c2Id = commandGateway.sendAndWait(new CreateChild2Command("456"), String.class);
+        String child1Result = commandGateway.sendAndWait(new AbstractCommandHandlerCommand(c1Id), String.class);
+        String child2Result = commandGateway.sendAndWait(new AbstractCommandHandlerCommand(c2Id), String.class);
         assertEquals("handledByChild1", child1Result);
         assertEquals("handledByChild2", child2Result);
     }
@@ -199,26 +211,28 @@ public abstract class AbstractPolymorphicAggregateAnnotationCommandHandlerTestSu
         AggregateModel<SimpleAggregate> model = new AnnotatedAggregateMetaModelFactory()
                 .createModel(SimpleAggregate.class);
 
-        Repository<SimpleAggregate> repository = repository(SimpleAggregate.class, model, entityManager);
+        LegacyRepository<SimpleAggregate> repository =
+                repository(SimpleAggregate.class, Collections.emptySet(), entityManager);
 
-        AggregateAnnotationCommandHandler<SimpleAggregate> ch = AggregateAnnotationCommandHandler.<SimpleAggregate>builder()
-                .aggregateType(SimpleAggregate.class)
-                .aggregateModel(model)
-                .repository(repository)
-                .build();
-        ch.subscribe(commandBus);
+        AggregateAnnotationCommandHandler<SimpleAggregate> ch =
+                AggregateAnnotationCommandHandler.<SimpleAggregate>builder()
+                                                 .aggregateType(SimpleAggregate.class)
+                                                 .aggregateModel(model)
+                                                 .repository(repository)
+                                                 .build();
+        commandBus.subscribe(ch);
 
         String simpleAggregateId = "id";
         String child1AggregateId = "child1" + simpleAggregateId;
         commandGateway.sendAndWait(new CreateSimpleAggregateCommand(simpleAggregateId));
-        String result = commandGateway.sendAndWait(new CommonCommand(child1AggregateId));
+        String result = commandGateway.sendAndWait(new CommonCommand(child1AggregateId), String.class);
         assertEquals("Child1Aggregate" + child1AggregateId, result);
     }
 
     private void assertAggregateState(String aggregateId, String expectedState) {
-        DefaultUnitOfWork<Message<?>> uow = DefaultUnitOfWork.startAndGet(null);
+        LegacyDefaultUnitOfWork<Message<?>> uow = LegacyDefaultUnitOfWork.startAndGet(null);
         uow.attachTransaction(transactionManager);
-        String state = uow.executeWithResult(() -> {
+        String state = uow.executeWithResult((ctx) -> {
             AtomicReference<String> rv = new AtomicReference<>();
             repository.load(aggregateId).execute(a -> rv.set(a.getState()));
             return rv.get();
@@ -229,7 +243,8 @@ public abstract class AbstractPolymorphicAggregateAnnotationCommandHandlerTestSu
     private static abstract class AbstractAggregateWithCommandHandlerConstructor {
 
         @CommandHandler
-        public AbstractAggregateWithCommandHandlerConstructor(String cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(String cmd) {
         }
     }
 
@@ -240,14 +255,16 @@ public abstract class AbstractPolymorphicAggregateAnnotationCommandHandlerTestSu
     private static class B extends A {
 
         @CommandHandler
-        public B(String cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(String cmd) {
         }
     }
 
     private static class C extends A {
 
         @CommandHandler
-        public C(String cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(String cmd) {
         }
     }
 

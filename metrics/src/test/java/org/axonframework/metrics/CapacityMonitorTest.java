@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2016. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,7 +19,9 @@ package org.axonframework.metrics;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Metric;
 import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.monitoring.MessageMonitor;
 import org.junit.jupiter.api.*;
 
@@ -27,14 +29,13 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SuppressWarnings("unchecked")
 class CapacityMonitorTest {
 
     @Test
-    void testSingleThreadedCapacity() {
+    void singleThreadedCapacity() {
         TestClock testClock = new TestClock();
         CapacityMonitor testSubject = new CapacityMonitor(1, TimeUnit.SECONDS, testClock);
         MessageMonitor.MonitorCallback monitorCallback = testSubject.onMessageIngested(null);
@@ -47,7 +48,7 @@ class CapacityMonitorTest {
     }
 
     @Test
-    void testMultithreadedCapacity() {
+    void multithreadedCapacity() {
         TestClock testClock = new TestClock();
         CapacityMonitor testSubject = new CapacityMonitor(1, TimeUnit.SECONDS, testClock);
         EventMessage<Object> foo = asEventMessage("foo");
@@ -64,11 +65,15 @@ class CapacityMonitorTest {
     }
 
     @Test
-    void testEmptyCapacity() {
+    void emptyCapacity() {
         TestClock testClock = new TestClock();
         CapacityMonitor testSubject = new CapacityMonitor(1, TimeUnit.SECONDS, testClock);
         Map<String, Metric> metricSet = testSubject.getMetrics();
         Gauge<Double> capacityGauge = (Gauge<Double>) metricSet.get("capacity");
         assertEquals(0, capacityGauge.getValue(), 0);
+    }
+
+    private static EventMessage<Object> asEventMessage(String payload) {
+        return new GenericEventMessage<>(new MessageType("event"), payload);
     }
 }

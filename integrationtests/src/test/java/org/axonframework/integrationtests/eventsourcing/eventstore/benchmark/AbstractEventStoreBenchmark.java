@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,14 @@ import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.EventMessageHandler;
 import org.axonframework.eventhandling.EventProcessor;
 import org.axonframework.eventhandling.SimpleEventHandlerInvoker;
-import org.axonframework.eventhandling.TrackingEventProcessor;
+import org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor;
 import org.axonframework.eventhandling.tokenstore.inmemory.InMemoryTokenStore;
-import org.axonframework.eventsourcing.eventstore.AbstractEventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.EmbeddedEventStore;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.eventsourcing.eventstore.AbstractLegacyEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.LegacyEmbeddedEventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStorageEngine;
+import org.axonframework.eventstreaming.LegacyStreamableEventSource;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.axonframework.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,11 +46,12 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.axonframework.eventsourcing.utils.EventStoreTestUtils.createEvent;
+import static org.axonframework.eventhandling.DomainEventTestUtils.createDomainEvent;
 
 /**
  * @author Rene de Waele
@@ -60,32 +62,40 @@ public abstract class AbstractEventStoreBenchmark {
     private static final DecimalFormat decimalFormat = new DecimalFormat("0.00");
 
     private final Logger logger = LoggerFactory.getLogger(getClass());
-    private final EmbeddedEventStore eventStore;
+    private final LegacyEmbeddedEventStore eventStore;
     private final EventProcessor eventProcessor;
-    private final EventStorageEngine storageEngine;
+    private final LegacyEventStorageEngine storageEngine;
     private final int threadCount, batchSize, batchCount;
     private final ExecutorService executorService;
+    private final ScheduledExecutorService coordinatorExecutor;
+    private final ScheduledExecutorService workerExecutor;
     private final CountDownLatch remainingEvents;
     private final Set<String> readEvents = new HashSet<>();
 
-    protected AbstractEventStoreBenchmark(EventStorageEngine storageEngine) {
+    protected AbstractEventStoreBenchmark(LegacyEventStorageEngine storageEngine) {
         this(storageEngine, DEFAULT_THREAD_COUNT, DEFAULT_BATCH_SIZE, DEFAULT_BATCH_COUNT);
     }
 
-    protected AbstractEventStoreBenchmark(EventStorageEngine storageEngine, int threadCount, int batchSize,
+    protected AbstractEventStoreBenchmark(LegacyEventStorageEngine storageEngine, int threadCount, int batchSize,
                                           int batchCount) {
-        this.eventStore = EmbeddedEventStore.builder()
-                                            .storageEngine(this.storageEngine = storageEngine)
-                                            .build();
+        this.eventStore = LegacyEmbeddedEventStore.builder()
+                                                  .storageEngine(this.storageEngine = storageEngine)
+                                                  .build();
         this.threadCount = threadCount;
         this.batchSize = batchSize;
         this.batchCount = batchCount;
         this.remainingEvents = new CountDownLatch(getTotalEventCount());
 
+        // Create executors that we can manage lifecycle for
+        this.coordinatorExecutor = Executors.newSingleThreadScheduledExecutor(
+                new AxonThreadFactory("benchmark-coordinator"));
+        this.workerExecutor = Executors.newScheduledThreadPool(2,
+                new AxonThreadFactory("benchmark-worker"));
+
         SimpleEventHandlerInvoker eventHandlerInvoker =
                 SimpleEventHandlerInvoker.builder()
                                          .eventHandlers(
-                                                 (EventMessageHandler) eventHandler -> {
+                                                 (EventMessageHandler) (eventHandler, ctx) -> {
                                                      if (readEvents.add(eventHandler.getIdentifier())) {
                                                          remainingEvents.countDown();
                                                      } else {
@@ -96,12 +106,14 @@ public abstract class AbstractEventStoreBenchmark {
                                                  }
 
                                          ).build();
-        this.eventProcessor = TrackingEventProcessor.builder()
+        this.eventProcessor = PooledStreamingEventProcessor.builder()
                                                     .name("benchmark")
                                                     .eventHandlerInvoker(eventHandlerInvoker)
-                                                    .messageSource(eventStore)
+                                                    .eventSource(new LegacyStreamableEventSource<>(eventStore))
                                                     .tokenStore(new InMemoryTokenStore())
                                                     .transactionManager(NoTransactionManager.INSTANCE)
+                                                    .coordinatorExecutor(coordinatorExecutor)
+                                                    .workerExecutor(workerExecutor)
                                                     .build();
         this.executorService = Executors.newFixedThreadPool(threadCount, new AxonThreadFactory("storageJobs"));
     }
@@ -152,6 +164,8 @@ public abstract class AbstractEventStoreBenchmark {
         executorService.shutdown();
         eventProcessor.shutDown();
         eventStore.shutDown();
+        coordinatorExecutor.shutdown();
+        workerExecutor.shutdown();
     }
 
     protected List<Callable<Object>> createStorageJobs(int threadCount, int batchSize, int batchCount) {
@@ -171,7 +185,7 @@ public abstract class AbstractEventStoreBenchmark {
 
     protected EventMessage<?>[] createEvents(String aggregateId, int startSequenceNumber, int count) {
         return IntStream.range(startSequenceNumber, startSequenceNumber + count)
-                        .mapToObj(sequenceNumber -> createEvent(aggregateId, sequenceNumber))
+                        .mapToObj(sequenceNumber -> createDomainEvent(aggregateId, sequenceNumber))
                         .peek(event -> serializer().ifPresent(serializer -> {
                             event.serializePayload(serializer, byte[].class);
                             event.serializeMetaData(serializer, byte[].class);
@@ -179,8 +193,8 @@ public abstract class AbstractEventStoreBenchmark {
     }
 
     protected void executeStorageJob(EventMessage<?>... events) {
-        UnitOfWork<?> unitOfWork = new DefaultUnitOfWork<>(null);
-        unitOfWork.execute(() -> storeEvents(events));
+        LegacyUnitOfWork<?> unitOfWork = new LegacyDefaultUnitOfWork<>(null);
+        unitOfWork.execute((ctx) -> storeEvents(events));
     }
 
     protected void storeEvents(EventMessage<?>... events) {
@@ -188,15 +202,15 @@ public abstract class AbstractEventStoreBenchmark {
     }
 
     protected Optional<Serializer> serializer() {
-        return storageEngine instanceof AbstractEventStorageEngine ?
-                Optional.of(((AbstractEventStorageEngine) storageEngine).getSnapshotSerializer()) : Optional.empty();
+        return storageEngine instanceof AbstractLegacyEventStorageEngine ?
+                Optional.of(((AbstractLegacyEventStorageEngine) storageEngine).getSnapshotSerializer()) : Optional.empty();
     }
 
     public int getTotalEventCount() {
         return threadCount * batchSize * batchCount;
     }
 
-    protected EventStorageEngine getStorageEngine() {
+    protected LegacyEventStorageEngine getStorageEngine() {
         return storageEngine;
     }
 }

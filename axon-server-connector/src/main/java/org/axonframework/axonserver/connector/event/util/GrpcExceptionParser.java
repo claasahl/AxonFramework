@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,11 +40,7 @@ public class GrpcExceptionParser {
      */
     public static RuntimeException parse(Throwable exception) {
         String code = "AXONIQ-0001";
-        if (exception instanceof StatusRuntimeException) {
-            if (exception.getCause() instanceof EventStoreClientException) {
-                return (EventStoreClientException) exception.getCause();
-            }
-            StatusRuntimeException statusRuntimeException = (StatusRuntimeException) exception;
+        if (exception instanceof StatusRuntimeException statusRuntimeException) {
             if (Status.Code.UNIMPLEMENTED.equals(statusRuntimeException.getStatus().getCode())) {
                 return new UnsupportedOperationException(exception.getMessage(), exception);
             }

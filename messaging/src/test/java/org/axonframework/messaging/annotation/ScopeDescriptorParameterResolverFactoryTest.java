@@ -1,14 +1,29 @@
+/*
+ * Copyright (c) 2010-2025. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.axonframework.messaging.annotation;
 
-import org.axonframework.messaging.Message;
 import org.axonframework.messaging.NoScopeDescriptor;
 import org.axonframework.messaging.ScopeDescriptor;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link ScopeDescriptorParameterResolverFactory}.
@@ -21,27 +36,25 @@ class ScopeDescriptorParameterResolverFactoryTest {
 
     private Method scopeDescriptorLessMethod;
     private Method scopeDescriptorUsingMethod;
-    private Message<?> testMessage;
 
     @BeforeEach
     void setUp() throws NoSuchMethodException {
         scopeDescriptorUsingMethod = getClass().getMethod("someScopeDescriptorUsingMethod", ScopeDescriptor.class);
         scopeDescriptorLessMethod = getClass().getMethod("someScopeDescriptorLessMethod", String.class);
-        testMessage = mock(Message.class);
     }
 
     @Test
-    void testParameterResolverIsNullForScopeDescriptorLessMethod() {
+    void parameterResolverIsNullForScopeDescriptorLessMethod() {
         assertNull(testSubject.createInstance(scopeDescriptorLessMethod, scopeDescriptorLessMethod.getParameters(), 0));
     }
 
     @Test
-    void testResolvesNoScopeDescriptor() {
+    void resolvesNoScopeDescriptor() {
         ParameterResolver<ScopeDescriptor> resolver =
                 testSubject.createInstance(scopeDescriptorUsingMethod, scopeDescriptorUsingMethod.getParameters(), 0);
 
-        assertTrue(resolver.matches(testMessage));
-        assertEquals(NoScopeDescriptor.INSTANCE, resolver.resolveParameterValue(testMessage));
+        assertTrue(resolver.matches(new StubProcessingContext()));
+        assertEquals(NoScopeDescriptor.INSTANCE, resolver.resolveParameterValue(new StubProcessingContext()));
     }
 
     @SuppressWarnings("unused")

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import org.axonframework.eventhandling.EventBus;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventhandling.scheduling.ScheduleToken;
+import org.axonframework.messaging.MessageType;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
 import org.mockito.*;
@@ -71,7 +72,7 @@ class SimpleEventSchedulerTest {
     }
 
     @Test
-    void testScheduleJob() throws InterruptedException {
+    void scheduleJob() throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         doAnswer(invocation -> {
             latch.countDown();
@@ -83,19 +84,7 @@ class SimpleEventSchedulerTest {
     }
 
     @Test
-    void testScheduleTokenIsSerializable() throws IOException, ClassNotFoundException {
-        ScheduleToken token = testSubject.schedule(Duration.ZERO, new Object());
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ObjectOutputStream oos = new ObjectOutputStream(baos);
-        oos.writeObject(token);
-        oos.close();
-        ScheduleToken token2 = (ScheduleToken) new ObjectInputStream(new ByteArrayInputStream(baos.toByteArray()))
-                .readObject();
-        testSubject.cancelSchedule(token2);
-    }
-
-    @Test
-    void testCancelJob() throws InterruptedException {
+    void cancelJob() throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         doAnswer(invocation -> {
             latch.countDown();
@@ -117,7 +106,7 @@ class SimpleEventSchedulerTest {
     }
 
     @Test
-    void testShutdownInvokesExecutorServiceShutdown(@Mock ScheduledExecutorService scheduledExecutorService) {
+    void shutdownInvokesExecutorServiceShutdown(@Mock ScheduledExecutorService scheduledExecutorService) {
         SimpleEventScheduler testSubject = SimpleEventScheduler.builder()
                                                                .scheduledExecutorService(scheduledExecutorService)
                                                                .eventBus(eventBus)
@@ -129,6 +118,6 @@ class SimpleEventSchedulerTest {
     }
 
     private EventMessage<Object> createEvent() {
-        return new GenericEventMessage<>(new Object());
+        return new GenericEventMessage<>(new MessageType("event"), new Object());
     }
 }

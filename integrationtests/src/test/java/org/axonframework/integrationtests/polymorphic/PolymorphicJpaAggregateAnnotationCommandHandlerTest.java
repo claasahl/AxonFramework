@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,15 +16,17 @@
 
 package org.axonframework.integrationtests.polymorphic;
 
+import jakarta.persistence.EntityManager;
 import org.axonframework.eventhandling.EventBus;
-import org.axonframework.modelling.command.GenericJpaRepository;
-import org.axonframework.modelling.command.Repository;
+import org.axonframework.modelling.command.LegacyGenericJpaRepository;
+import org.axonframework.modelling.command.LegacyRepository;
 import org.axonframework.modelling.command.RepositoryProvider;
-import org.axonframework.modelling.command.inspection.AggregateModel;
+import org.junit.jupiter.api.*;
 
 import java.util.HashMap;
 import java.util.Map;
-import javax.persistence.EntityManager;
+import java.util.Set;
+import jakarta.annotation.Nonnull;
 
 import static org.mockito.Mockito.*;
 
@@ -33,26 +35,28 @@ import static org.mockito.Mockito.*;
  *
  * @author Milan Savic
  */
+@Disabled("TODO #3061 - Revisit Aggregate Polymorphism")
 public class PolymorphicJpaAggregateAnnotationCommandHandlerTest
         extends AbstractPolymorphicAggregateAnnotationCommandHandlerTestSuite {
 
-    private static final Map<Class<?>, Repository<?>> repositories = new HashMap<>();
+    private static final Map<Class<?>, LegacyRepository<?>> repositories = new HashMap<>();
 
     @Override
-    public <T> Repository<T> repository(Class<T> aggregateType,
-                                        AggregateModel<T> model,
-                                        EntityManager entityManager) {
-        GenericJpaRepository<T> repository = GenericJpaRepository
+    public <T> LegacyRepository<T> repository(Class<T> aggregateType,
+                                              Set<Class<? extends T>> subTypes,
+                                              EntityManager entityManager) {
+        LegacyGenericJpaRepository<T> repository = LegacyGenericJpaRepository
                 .builder(aggregateType)
+                .subtypes(subTypes)
                 .entityManagerProvider(() -> entityManager)
                 .repositoryProvider(new RepositoryProvider() {
                     @Override
-                    public <R> Repository<R> repositoryFor(Class<R> aggregateType) {
-                        return (Repository<R>) repositories.get(aggregateType);
+                    public <R> LegacyRepository<R> repositoryFor(@Nonnull Class<R> aggregateType) {
+                        //noinspection unchecked
+                        return (LegacyRepository<R>) repositories.get(aggregateType);
                     }
                 })
                 .eventBus(mock(EventBus.class))
-                .aggregateModel(model)
                 .build();
         repositories.put(aggregateType, repository);
         return repository;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import static org.mockito.Mockito.mock;
 class NoCacheTest {
 
     @Test
-    void testCacheDoesNothing() throws CacheException {
+    void cacheDoesNothing() throws CacheException {
         // this is pretty stupid, but we're testing that it does absolutely nothing
         NoCache cache = NoCache.INSTANCE;
         Registration registration = cache.registerCacheEntryListener(mock(Cache.EntryListener.class));

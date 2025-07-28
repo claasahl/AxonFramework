@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,27 +16,39 @@
 
 package org.axonframework.test.saga;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.GenericMessage;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.ParameterResolver;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Executable;
+import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 import static org.axonframework.test.matchers.Matchers.listWithAnyOf;
 import static org.axonframework.test.matchers.Matchers.predicate;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * This test class is intended to test whether the registration of a {@link org.axonframework.messaging.annotation.HandlerDefinition}
- * and a {@link org.axonframework.messaging.annotation.HandlerEnhancerDefinition} go according to plan.
+ * This test class is intended to test whether the registration of a
+ * {@link org.axonframework.messaging.annotation.HandlerDefinition} and a
+ * {@link org.axonframework.messaging.annotation.HandlerEnhancerDefinition} go according to plan.
  *
  * @author Steven van Beelen
  */
@@ -52,7 +64,7 @@ public class FixtureTest_RegisteringMethodEnhancements {
     }
 
     @Test
-    void testRegisterParameterResolverFactory() {
+    void registerParameterResolverFactory() {
         testSubject.registerParameterResolverFactory(new TestParameterResolverFactory(new AtomicBoolean(false)))
                    .givenAggregate(TEST_AGGREGATE_IDENTIFIER)
                    .published(new TriggerSagaStartEvent(TEST_AGGREGATE_IDENTIFIER))
@@ -65,8 +77,15 @@ public class FixtureTest_RegisteringMethodEnhancements {
                    })));
     }
 
+    private static <P> EventMessage<P> asEventMessage(P event) {
+        return new GenericEventMessage<>(
+                new GenericMessage<>(new MessageType(event.getClass()), event),
+                () -> GenericEventMessage.clock.instant()
+        );
+    }
+
     @Test
-    void testCreateHandlerMethodIsCalledForRegisteredCustomHandlerDefinition() {
+    void createHandlerMethodIsCalledForRegisteredCustomHandlerDefinition() {
         AtomicBoolean handlerDefinitionReached = new AtomicBoolean(false);
 
         testSubject.registerHandlerDefinition(new TestHandlerDefinition(handlerDefinitionReached))
@@ -78,7 +97,7 @@ public class FixtureTest_RegisteringMethodEnhancements {
     }
 
     @Test
-    void testWrapHandlerMethodIsCalledForRegisteredCustomHandlerEnhancerDefinition() {
+    void wrapHandlerMethodIsCalledForRegisteredCustomHandlerEnhancerDefinition() {
         AtomicBoolean handlerEnhancerReached = new AtomicBoolean(false);
 
         testSubject.registerHandlerEnhancerDefinition(new TestHandlerEnhancerDefinition(handlerEnhancerReached))
@@ -87,6 +106,18 @@ public class FixtureTest_RegisteringMethodEnhancements {
                    .expectScheduledEventOfType(Duration.ofMinutes(10), TimerTriggeredEvent.class);
 
         assertTrue(handlerEnhancerReached.get());
+    }
+
+    @Test
+    void testRegisterParameterResolverFactoryStillCallsMetadataValue() {
+        testSubject.registerParameterResolverFactory(new TestParameterResolverFactory(new AtomicBoolean(false)))
+                   .givenAggregate(TEST_AGGREGATE_IDENTIFIER)
+                   .published(asEventMessage(new TriggerSagaStartEvent(TEST_AGGREGATE_IDENTIFIER))
+                                            .withMetaData(
+                                                         Collections.singletonMap("extraIdentifier",
+                                                                                  "myExtraIdentifier")))
+                   .whenPublishingA(new ParameterResolvedEvent(TEST_AGGREGATE_IDENTIFIER))
+                   .expectAssociationWith("extraIdentifier", "myExtraIdentifier");
     }
 
     private static class TestParameterResolverFactory
@@ -98,20 +129,23 @@ public class FixtureTest_RegisteringMethodEnhancements {
             this.assertion = assertion;
         }
 
+        @Nullable
         @Override
-        public ParameterResolver<AtomicBoolean> createInstance(Executable executable,
-                                                               Parameter[] parameters,
+        public ParameterResolver<AtomicBoolean> createInstance(@Nonnull Executable executable,
+                                                               @Nonnull Parameter[] parameters,
                                                                int parameterIndex) {
             return AtomicBoolean.class.equals(parameters[parameterIndex].getType()) ? this : null;
         }
 
+        @Nullable
         @Override
-        public AtomicBoolean resolveParameterValue(Message<?> message) {
+        public AtomicBoolean resolveParameterValue(@Nonnull ProcessingContext context) {
             return assertion;
         }
 
         @Override
-        public boolean matches(Message<?> message) {
+        public boolean matches(@Nonnull ProcessingContext context) {
+            Message<?> message = Message.fromContext(context);
             return message.getPayloadType().isAssignableFrom(ParameterResolvedEvent.class);
         }
     }
@@ -125,9 +159,12 @@ public class FixtureTest_RegisteringMethodEnhancements {
         }
 
         @Override
-        public <T> Optional<MessageHandlingMember<T>> createHandler(Class<T> declaringType,
-                                                                    Executable executable,
-                                                                    ParameterResolverFactory parameterResolverFactory) {
+        public <T> Optional<MessageHandlingMember<T>> createHandler(
+                @Nonnull Class<T> declaringType,
+                @Nonnull Method method,
+                @Nonnull ParameterResolverFactory parameterResolverFactory,
+                @Nonnull Function<Object, MessageStream<?>> returnTypeConverter
+        ) {
             assertion.set(true);
             // We do not care about a specific MessageHandlingMember,
             //  only that this method is called to ensure its part of the FixtureConfiguration.
@@ -144,7 +181,8 @@ public class FixtureTest_RegisteringMethodEnhancements {
         }
 
         @Override
-        public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+        public @Nonnull
+        <T> MessageHandlingMember<T> wrapHandler(@Nonnull MessageHandlingMember<T> original) {
             assertion.set(true);
             // We do not care about a specific MessageHandlingMember,
             //  only that this method is called to ensure its part of the FixtureConfiguration.

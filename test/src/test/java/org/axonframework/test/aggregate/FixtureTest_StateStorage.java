@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,16 @@
 
 package org.axonframework.test.aggregate;
 
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
+import org.axonframework.test.FixtureExecutionException;
 import org.junit.jupiter.api.*;
 
+import java.util.Collections;
 import java.util.function.Supplier;
 
 import static org.axonframework.modelling.command.AggregateLifecycle.apply;
@@ -54,7 +58,8 @@ class FixtureTest_StateStorage {
     }
 
     @Test
-    void testCreateStateStoredAggregate() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void createStateStoredAggregate() {
         fixture.givenState(() -> new StateStoredAggregate(AGGREGATE_ID, "message"))
                .when(new SetMessageCommand(AGGREGATE_ID, "message2"))
                .expectEvents(new StubDomainEvent())
@@ -62,7 +67,29 @@ class FixtureTest_StateStorage {
     }
 
     @Test
-    void testEmittedEventsFromExpectStateAreNotStored() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void givenCommandsForStateStoredAggregate() {
+        fixture.useStateStorage()
+               .givenCommands(new InitializeCommand(AGGREGATE_ID, "message"))
+               .when(new SetMessageCommand(AGGREGATE_ID, "message2"))
+               .expectEvents(new StubDomainEvent())
+               .expectState(aggregate -> assertEquals("message2", aggregate.getMessage()));
+    }
+
+
+    @Test
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void createStateStoredAggregateWithCommand() {
+        fixture.useStateStorage()
+               .givenNoPriorActivity()
+               .when(new InitializeCommand(AGGREGATE_ID, "message"))
+               .expectEvents(new StubDomainEvent())
+               .expectState(aggregate -> assertEquals("message", aggregate.getMessage()));
+    }
+
+    @Test
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void emittedEventsFromExpectStateAreNotStored() {
         fixture.givenState(() -> new StateStoredAggregate(AGGREGATE_ID, "message"))
                .when(new SetMessageCommand(AGGREGATE_ID, "message2"))
                .expectEvents(new StubDomainEvent())
@@ -75,7 +102,8 @@ class FixtureTest_StateStorage {
     }
 
     @Test
-    void testCreateStateStoredAggregate_ErrorInChanges() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void createStateStoredAggregate_ErrorInChanges() {
         ResultValidator<StateStoredAggregate> result =
                 fixture.givenState(() -> new StateStoredAggregate(AGGREGATE_ID, "message"))
                        .when(new ErrorCommand(AGGREGATE_ID, "message2"))
@@ -93,7 +121,8 @@ class FixtureTest_StateStorage {
      * Follow up on GitHub issue https://github.com/AxonFramework/AxonFramework/issues/1219
      */
     @Test
-    void testStateStoredAggregateCanAttachRegisteredResource() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void stateStoredAggregateCanAttachRegisteredResource() {
         String expectedMessage = "state stored resource injection works";
         HardToCreateResource testResource = spy(new HardToCreateResource());
 
@@ -103,6 +132,26 @@ class FixtureTest_StateStorage {
                .expectEvents(new StubDomainEvent());
 
         verify(testResource).difficultOperation(expectedMessage);
+    }
+
+    @Test
+    void givenWithStateStorageException() {
+        fixture.useStateStorage();
+
+        assertThrows(
+                FixtureExecutionException.class,
+                () -> fixture.given(new StubDomainEvent())
+        );
+    }
+
+    @Test
+    void givenWithEventListAndStateStorageExpectException() {
+        fixture.useStateStorage();
+
+        assertThrows(
+                FixtureExecutionException.class,
+                () -> fixture.given(Collections.singletonList(new StubDomainEvent()))
+        );
     }
 
     private static class InitializeCommand {
@@ -195,11 +244,15 @@ class FixtureTest_StateStorage {
         StateStoredAggregate(String id, String message) {
             this.id = id;
             this.message = message;
+            // this event, published during the givenState operation, should not be included in the expectEvents phase
+            apply(new StubDomainEvent());
         }
 
         @CommandHandler
-        public StateStoredAggregate(InitializeCommand cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(InitializeCommand cmd) {
             this.id = cmd.getId();
+            this.message = cmd.getMessage();
             apply(new StubDomainEvent());
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,39 +17,27 @@
 package org.axonframework.eventhandling.scheduling.quartz;
 
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.eventhandling.EventTestUtils;
 import org.axonframework.messaging.MetaData;
-import org.axonframework.serialization.JavaSerializer;
 import org.axonframework.serialization.SerializedType;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.SimpleSerializedObject;
+import org.axonframework.serialization.TestSerializer;
 import org.axonframework.serialization.json.JacksonSerializer;
-import org.axonframework.serialization.xml.XStreamSerializer;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.mockito.ArgumentMatcher;
+import org.junit.jupiter.params.*;
+import org.junit.jupiter.params.provider.*;
+import org.mockito.*;
 import org.quartz.JobDataMap;
 
-import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
-import static org.axonframework.messaging.Headers.MESSAGE_ID;
-import static org.axonframework.messaging.Headers.MESSAGE_METADATA;
-import static org.axonframework.messaging.Headers.MESSAGE_REVISION;
-import static org.axonframework.messaging.Headers.MESSAGE_TIMESTAMP;
-import static org.axonframework.messaging.Headers.MESSAGE_TYPE;
-import static org.axonframework.messaging.Headers.SERIALIZED_MESSAGE_PAYLOAD;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.axonframework.messaging.Headers.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 class DirectEventJobDataBinderTest {
 
@@ -60,25 +48,20 @@ class DirectEventJobDataBinderTest {
 
     DirectEventJobDataBinderTest() {
         this.testMetaData = MetaData.with("some-key", "some-value");
-        this.testEventMessage = GenericEventMessage.<String>asEventMessage(TEST_EVENT_PAYLOAD)
-                .withMetaData(testMetaData);
+        this.testEventMessage = EventTestUtils.<String>asEventMessage(TEST_EVENT_PAYLOAD)
+                                              .withMetaData(testMetaData);
     }
 
     static Stream<Arguments> serializerImplementationAndAssertionSpecifics() {
         return Stream.of(
                 Arguments.arguments(
-                        spy(JavaSerializer.builder().build()),
-                        (Function<Class, String>) Class::getName,
-                        (Predicate<Object>) Objects::nonNull
-                ),
-                Arguments.arguments(
-                        spy(XStreamSerializer.builder().build()),
-                        (Function<Class, String>) clazz -> clazz.getSimpleName().toLowerCase(),
+                        spy(TestSerializer.XSTREAM.getSerializer()),
+                        (Function<Class<?>, String>) clazz -> clazz.getSimpleName().toLowerCase(),
                         (Predicate<Object>) Objects::isNull
                 ),
                 Arguments.arguments(
                         spy(JacksonSerializer.builder().build()),
-                        (Function<Class, String>) Class::getName,
+                        (Function<Class<?>, String>) Class::getName,
                         (Predicate<Object>) Objects::isNull
                 )
         );
@@ -86,9 +69,9 @@ class DirectEventJobDataBinderTest {
 
     @MethodSource("serializerImplementationAndAssertionSpecifics")
     @ParameterizedTest
-    void testEventMessageToJobData(
+    void eventMessageToJobData(
             Serializer serializer,
-            Function<Class, String> expectedSerializedClassType,
+            Function<Class<?>, String> expectedSerializedClassType,
             Predicate<Object> revisionMatcher
     ) {
         QuartzEventScheduler.DirectEventJobDataBinder testSubject = new QuartzEventScheduler.DirectEventJobDataBinder(serializer);
@@ -112,9 +95,9 @@ class DirectEventJobDataBinderTest {
     @SuppressWarnings("unchecked")
     @MethodSource("serializerImplementationAndAssertionSpecifics")
     @ParameterizedTest
-    void testEventMessageFromJobData(
+    void eventMessageFromJobData(
             Serializer serializer,
-            Function<Class, String> expectedSerializedClassType,
+            Function<Class<?>, String> expectedSerializedClassType,
             Predicate<Object> revisionMatcher
     ) {
         QuartzEventScheduler.DirectEventJobDataBinder testSubject = new QuartzEventScheduler.DirectEventJobDataBinder(serializer);
@@ -138,10 +121,11 @@ class DirectEventJobDataBinderTest {
     }
 
     private static class MatchEventMessageSerializedObject implements ArgumentMatcher<SimpleSerializedObject<?>> {
-        private final Function<Class, String> expectedSerializedClassType;
+        private final Function<Class<?>, String> expectedSerializedClassType;
         private final Predicate<Object> revisionMatcher;
 
-        MatchEventMessageSerializedObject(Function<Class, String> expectedSerializedClassType, Predicate<Object> revisionMatcher) {
+        MatchEventMessageSerializedObject(Function<Class<?>, String> expectedSerializedClassType,
+                                          Predicate<Object> revisionMatcher) {
             this.expectedSerializedClassType = expectedSerializedClassType;
             this.revisionMatcher = revisionMatcher;
         }

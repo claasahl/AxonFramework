@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,17 @@ package org.axonframework.eventhandling.replay;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.eventhandling.AllowReplay;
 import org.axonframework.eventhandling.ReplayToken;
+import org.axonframework.messaging.HandlerAttributes;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.WrappedMessageHandlingMember;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 import java.lang.reflect.Member;
 import java.util.Map;
+import java.util.Optional;
+import jakarta.annotation.Nonnull;
 
 import static java.util.Collections.singletonMap;
 
@@ -41,15 +45,16 @@ public class ReplayAwareMessageHandlerWrapper implements HandlerEnhancerDefiniti
     private static final Map<String, Object> DEFAULT_SETTING = singletonMap("allowReplay", Boolean.TRUE);
 
     @Override
-    public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+    public @Nonnull
+    <T> MessageHandlingMember<T> wrapHandler(@Nonnull MessageHandlingMember<T> original) {
         boolean isReplayAllowed = (boolean) original
-                .annotationAttributes(AllowReplay.class)
+                .attribute(HandlerAttributes.ALLOW_REPLAY)
                 .orElseGet(() -> original.unwrap(Member.class)
                                          .map(Member::getDeclaringClass)
                                          .map(c -> AnnotationUtils.findAnnotationAttributes(c, AllowReplay.class)
                                                                   .orElse(DEFAULT_SETTING))
-                                         .orElse(DEFAULT_SETTING)
-                ).get("allowReplay");
+                                         .orElse(DEFAULT_SETTING).get("allowReplay")
+                );
         if (!isReplayAllowed) {
             return new ReplayBlockingMessageHandlingMember<>(original);
         }
@@ -57,16 +62,30 @@ public class ReplayAwareMessageHandlerWrapper implements HandlerEnhancerDefiniti
     }
 
     private static class ReplayBlockingMessageHandlingMember<T> extends WrappedMessageHandlingMember<T> {
+
+        @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
+        public static final Optional<Boolean> NO_REPLAY = Optional.of(Boolean.FALSE);
+
         public ReplayBlockingMessageHandlingMember(MessageHandlingMember<T> original) {
             super(original);
         }
 
         @Override
-        public Object handle(Message<?> message, T target) throws Exception {
+        public Object handleSync(@Nonnull Message<?> message, @Nonnull ProcessingContext context, T target)
+                throws Exception {
             if (ReplayToken.isReplay(message)) {
                 return null;
             }
-            return super.handle(message, target);
+            return super.handleSync(message, context, target);
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public <R> Optional<R> attribute(String attributeKey) {
+            if (HandlerAttributes.ALLOW_REPLAY.equals(attributeKey)) {
+                return (Optional<R>) NO_REPLAY;
+            }
+            return super.attribute(attributeKey);
         }
     }
 }

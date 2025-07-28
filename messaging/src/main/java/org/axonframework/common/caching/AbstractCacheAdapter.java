@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ public abstract class AbstractCacheAdapter<L> implements Cache {
      * Registers the given listener with the cache implementation
      *
      * @param listenerAdapter the listener to register
-     * @return a handle to unregister the listener
+     * @return a handle to deregister the listener
      */
     protected abstract Registration doRegisterListener(L listenerAdapter);
 }

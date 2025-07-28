@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2024. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,9 +17,12 @@
 package org.axonframework.queryhandling;
 
 import org.axonframework.common.Registration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.lang.invoke.MethodHandles;
 import java.util.function.Consumer;
 
 /**
@@ -27,10 +30,12 @@ import java.util.function.Consumer;
  * subscription to the publisher, nothing happens.
  *
  * @author Milan Savic
- * @see QueryBus#subscriptionQuery(SubscriptionQueryMessage, SubscriptionQueryBackpressure, int)
+ * @see QueryBus#subscriptionQuery(SubscriptionQueryMessage, int)
  * @since 3.3
  */
 public interface SubscriptionQueryResult<I, U> extends Registration {
+
+    Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     /**
      * Subscribing to this mono will trigger invocation of query handler. The return value of that query handler will be
@@ -48,21 +53,66 @@ public interface SubscriptionQueryResult<I, U> extends Registration {
     Flux<U> updates();
 
     /**
-     * Delegates handling of initial result and incremental updates to the provided consumers. Subscription to the
-     * incremental updates is done after the initial result is retrieved and its consumer is invoked. If anything goes
-     * wrong during invoking or consuming initial result or incremental updates, subscription is cancelled.
+     * Delegates handling of initial result and incremental updates to the provided consumers.
+     * <p>
+     * Subscription to the incremental updates is done after the initial result is retrieved and its consumer is
+     * invoked. If anything goes wrong during invoking or consuming initial result or incremental updates, subscription
+     * is cancelled.
      *
-     * @param initialResultConsumer The consumer to be invoked when the initial result is retrieved
-     * @param updateConsumer        The consumer to be invoked when incremental updates are emitted
+     * @param initialResultConsumer The {@link Consumer} to be invoked when the initial result is retrieved.
+     * @param updateConsumer        The {@link Consumer} to be invoked when incremental updates are emitted.
+     * @deprecated Please use {@link #handle(Consumer, Consumer, Consumer)} instead, to consciously deal with any
+     * exceptions with the {@code errorConsumer}.
      */
+    @Deprecated
     default void handle(Consumer<? super I> initialResultConsumer, Consumer<? super U> updateConsumer) {
-        initialResult().subscribe(initialResult -> {
-            try {
-                initialResultConsumer.accept(initialResult);
-                updates().subscribe(updateConsumer);
-            } catch (Exception e) {
-                cancel();
-            }
-        }, t -> cancel());
+        handle(initialResultConsumer, updateConsumer,
+               error -> logger.warn("Failed handle the initial result or an update", error));
+    }
+
+    /**
+     * Delegates handling of initial result and incremental updates to the provided consumers.
+     * <p>
+     * Subscription to the incremental updates is done after the initial result is retrieved and its consumer is
+     * invoked. If anything goes wrong during invoking or consuming initial result or incremental updates, subscription
+     * is cancelled <em>after</em> invoking the given {@code errorConsumer}.
+     *
+     * @param initialResultConsumer The {@link Consumer} to be invoked when the initial result is retrieved.
+     * @param updateConsumer        The {@link Consumer} to be invoked when incremental updates are emitted.
+     * @param errorConsumer         A {@link Consumer} of {@link Exception} used to react to an exception resulting from
+     *                              the {@link #initialResult()} or {@link #updates()}.
+     */
+    default void handle(Consumer<? super I> initialResultConsumer,
+                        Consumer<? super U> updateConsumer,
+                        Consumer<Throwable> errorConsumer) {
+        initialResult().subscribe(
+                initialResult -> {
+                    try {
+                        initialResultConsumer.accept(initialResult);
+
+                        updates().subscribe(
+                                update -> {
+                                    try {
+                                        updateConsumer.accept(update);
+                                    } catch (Exception e) {
+                                        cancel();
+                                        errorConsumer.accept(e);
+                                    }
+                                },
+                                throwable -> {
+                                    cancel();
+                                    errorConsumer.accept(throwable);
+                                }
+                        );
+                    } catch (Exception e) {
+                        cancel();
+                        errorConsumer.accept(e);
+                    }
+                },
+                throwable -> {
+                    cancel();
+                    errorConsumer.accept(throwable);
+                }
+        );
     }
 }

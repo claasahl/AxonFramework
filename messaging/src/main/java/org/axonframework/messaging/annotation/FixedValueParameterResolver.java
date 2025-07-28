@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@
 
 package org.axonframework.messaging.annotation;
 
-import org.axonframework.messaging.Message;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 /**
  * ParameterResolver implementation that injects a fixed value. Useful for injecting parameter values that do not rely
@@ -39,13 +41,14 @@ public class FixedValueParameterResolver<T> implements ParameterResolver<T> {
         this.value = value;
     }
 
+    @Nullable
     @Override
-    public T resolveParameterValue(Message message) {
+    public T resolveParameterValue(@Nonnull ProcessingContext context) {
         return value;
     }
 
     @Override
-    public boolean matches(Message message) {
+    public boolean matches(@Nonnull ProcessingContext context) {
         return true;
     }
 }

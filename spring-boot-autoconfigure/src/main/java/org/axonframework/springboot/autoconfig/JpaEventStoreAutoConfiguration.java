@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,54 +16,58 @@
 
 package org.axonframework.springboot.autoconfig;
 
+import jakarta.persistence.EntityManagerFactory;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.common.transaction.TransactionManager;
+import org.axonframework.config.LegacyConfiguration;
 import org.axonframework.eventhandling.EventBus;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.jpa.JpaEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.eventstore.jpa.LegacyJpaEventStorageEngine;
 import org.axonframework.serialization.Serializer;
-import org.axonframework.spring.config.AxonConfiguration;
 import org.axonframework.springboot.util.RegisterDefaultEntities;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
-import javax.persistence.EntityManagerFactory;
 
 /**
- * Auto configuration class for Axon's JPA specific event store components.
+ * Autoconfiguration class for Axon's JPA specific event store components.
  *
  * @author Sara Pelligrini
  * @since 4.0
  */
+@AutoConfiguration
 @ConditionalOnBean(EntityManagerFactory.class)
-@ConditionalOnMissingBean({EventStorageEngine.class, EventBus.class})
+@ConditionalOnMissingBean({LegacyEventStorageEngine.class, EventBus.class, LegacyEventStore.class})
+@AutoConfigureAfter({AxonServerBusAutoConfiguration.class, HibernateJpaAutoConfiguration.class})
+@AutoConfigureBefore(LegacyAxonAutoConfiguration.class)
 @RegisterDefaultEntities(packages = {
         "org.axonframework.eventsourcing.eventstore.jpa"
 })
-@Configuration
-@AutoConfigureAfter(AxonServerAutoConfiguration.class)
 public class JpaEventStoreAutoConfiguration {
 
     @Bean
-    public EventStorageEngine eventStorageEngine(Serializer defaultSerializer,
-                                                 PersistenceExceptionResolver persistenceExceptionResolver,
-                                                 @Qualifier("eventSerializer") Serializer eventSerializer,
-                                                 AxonConfiguration configuration,
-                                                 EntityManagerProvider entityManagerProvider,
-                                                 TransactionManager transactionManager) {
-        return JpaEventStorageEngine.builder()
-                                    .snapshotSerializer(defaultSerializer)
-                                    .upcasterChain(configuration.upcasterChain())
-                                    .persistenceExceptionResolver(persistenceExceptionResolver)
-                                    .eventSerializer(eventSerializer)
-                                    .snapshotFilter(configuration.snapshotFilter())
-                                    .entityManagerProvider(entityManagerProvider)
-                                    .transactionManager(transactionManager)
-                                    .build();
+    public LegacyEventStorageEngine eventStorageEngine(Serializer defaultSerializer,
+                                                       PersistenceExceptionResolver persistenceExceptionResolver,
+                                                       @Qualifier("eventSerializer") Serializer eventSerializer,
+                                                       LegacyConfiguration configuration,
+                                                       EntityManagerProvider entityManagerProvider,
+                                                       TransactionManager transactionManager) {
+        return LegacyJpaEventStorageEngine.builder()
+                                          .snapshotSerializer(defaultSerializer)
+                                          .upcasterChain(configuration.upcasterChain())
+                                          .persistenceExceptionResolver(persistenceExceptionResolver)
+                                          .eventSerializer(eventSerializer)
+                                          .snapshotFilter(configuration.snapshotFilter())
+                                          .entityManagerProvider(entityManagerProvider)
+                                          .transactionManager(transactionManager)
+                                          .build();
     }
 }

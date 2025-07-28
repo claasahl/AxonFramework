@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,28 +20,35 @@ import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventsourcing.utils.MockException;
 import org.axonframework.eventsourcing.utils.StubAggregate;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.MessageType;
+import org.junit.jupiter.api.*;
 
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
+ * Test class validating the {@link GenericAggregateFactory}.
+ *
  * @author Allard Buijze
  */
 class GenericAggregateFactoryTest {
 
     @Test
-    void testInitializeRepository_NoSuitableConstructor() {
-        assertThrows(IncompatibleAggregateException.class, () -> new GenericAggregateFactory<>(UnsuitableAggregate.class));
+    void initializeRepository_NoSuitableConstructor() {
+        assertThrows(IncompatibleAggregateException.class,
+                     () -> new GenericAggregateFactory<>(UnsuitableAggregate.class));
     }
 
     @Test
-    void testInitializeRepository_ConstructorNotCallable() {
+    void initializeRepository_ConstructorNotCallable() {
         GenericAggregateFactory<ExceptionThrowingAggregate> factory =
                 new GenericAggregateFactory<>(ExceptionThrowingAggregate.class);
+        DomainEventMessage<Object> testEvent = new GenericDomainEventMessage<>(
+                "type", "", 0, new MessageType("event"), new Object()
+        );
         try {
-            factory.createAggregateRoot(UUID.randomUUID().toString(), new GenericDomainEventMessage<>("type", "", 0, new Object()));
+            factory.createAggregateRoot(UUID.randomUUID().toString(), testEvent);
             fail("Expected IncompatibleAggregateException");
         } catch (IncompatibleAggregateException e) {
             // we got it
@@ -49,10 +56,11 @@ class GenericAggregateFactoryTest {
     }
 
     @Test
-    void testInitializeFromAggregateSnapshot() {
+    void initializeFromAggregateSnapshot() {
         StubAggregate aggregate = new StubAggregate("stubId");
-        DomainEventMessage<StubAggregate> snapshotMessage = new GenericDomainEventMessage<>("type", aggregate.getIdentifier(),
-                                                                                            2, aggregate);
+        DomainEventMessage<StubAggregate> snapshotMessage = new GenericDomainEventMessage<>(
+                "type", aggregate.getIdentifier(), 2, new MessageType("event"), aggregate
+        );
         GenericAggregateFactory<StubAggregate> factory = new GenericAggregateFactory<>(StubAggregate.class);
         assertSame(aggregate, factory.createAggregateRoot(aggregate.getIdentifier(), snapshotMessage));
     }
@@ -61,18 +69,18 @@ class GenericAggregateFactoryTest {
      * Verify that {@link GenericAggregateFactory#doCreateAggregate} is not called unnecessarily.
      */
     @Test
-    void testInitializeFromAggregateSnapshot_AvoidCallingDoCreateAggregate() {
+    void initializeFromAggregateSnapshot_AvoidCallingDoCreateAggregate() {
         StubAggregate aggregate = new StubAggregate("stubId");
-        DomainEventMessage<StubAggregate> snapshotMessage = new GenericDomainEventMessage<>("type",
-                aggregate.getIdentifier(),
-                2, aggregate);
+        DomainEventMessage<StubAggregate> snapshotMessage = new GenericDomainEventMessage<>(
+                "type", aggregate.getIdentifier(), 2, new MessageType("event"), aggregate
+        );
         AggregateFactory<StubAggregate> factory = new RogueAggregateFactory(StubAggregate.class);
         assertSame(aggregate, factory.createAggregateRoot(aggregate.getIdentifier(), snapshotMessage));
     }
 
     private static class UnsuitableAggregate {
 
-        private UnsuitableAggregate(Object uuid) {
+        private UnsuitableAggregate(@SuppressWarnings("unused") Object uuid) {
         }
     }
 
@@ -81,10 +89,10 @@ class GenericAggregateFactoryTest {
         private ExceptionThrowingAggregate() {
             throw new MockException();
         }
-
     }
 
     private static class RogueAggregateFactory extends GenericAggregateFactory<StubAggregate> {
+
         public RogueAggregateFactory(Class<StubAggregate> aggregateType) {
             super(aggregateType);
         }
@@ -94,6 +102,4 @@ class GenericAggregateFactoryTest {
             throw new AssertionError("Forced error");
         }
     }
-
-
 }

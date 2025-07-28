@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.axonframework.deadline.quartz;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.AxonNonTransientException;
 import org.axonframework.common.transaction.NoTransactionManager;
@@ -23,13 +24,18 @@ import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.deadline.AbstractDeadlineManager;
 import org.axonframework.deadline.DeadlineException;
 import org.axonframework.deadline.DeadlineManager;
+import org.axonframework.deadline.DeadlineManagerSpanFactory;
 import org.axonframework.deadline.DeadlineMessage;
-import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
+import org.axonframework.deadline.DefaultDeadlineManagerSpanFactory;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.MessageTypeResolver;
+import org.axonframework.messaging.QualifiedName;
 import org.axonframework.messaging.ScopeAwareProvider;
 import org.axonframework.messaging.ScopeDescriptor;
 import org.axonframework.serialization.Serializer;
-import org.axonframework.serialization.xml.XStreamSerializer;
+import org.axonframework.tracing.NoOpSpanFactory;
+import org.axonframework.tracing.Span;
+import org.axonframework.tracing.SpanFactory;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
@@ -42,16 +48,15 @@ import org.quartz.impl.matchers.GroupMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Date;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import static java.util.Date.from;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.common.ExceptionUtils.findException;
-import static org.axonframework.deadline.GenericDeadlineMessage.asDeadlineMessage;
 import static org.quartz.JobKey.jobKey;
 
 /**
@@ -64,6 +69,7 @@ import static org.quartz.JobKey.jobKey;
 public class QuartzDeadlineManager extends AbstractDeadlineManager {
 
     private static final Logger logger = LoggerFactory.getLogger(QuartzDeadlineManager.class);
+    private static final String CANCEL_ERROR_MESSAGE = "An error occurred while cancelling a timer for a deadline manager";
 
     private static final String JOB_NAME_PREFIX = "deadline-";
 
@@ -72,30 +78,33 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
     private final TransactionManager transactionManager;
     private final Serializer serializer;
     private final Predicate<Throwable> refireImmediatelyPolicy;
+    private final DeadlineManagerSpanFactory spanFactory;
 
     /**
-     * Instantiate a Builder to be able to create a {@link QuartzDeadlineManager}.
+     * Instantiate a Builder to be able to create a {@code QuartzDeadlineManager}.
      * <p>
-     * The {@link TransactionManager} is defaulted to an {@link NoTransactionManager}, and the {@link Serializer} to a
-     * {@link XStreamSerializer}. The {@link Scheduler} and {@link ScopeAwareProvider} are <b>hard requirements</b> and
-     * as such should be provided.
+     * The {@link TransactionManager} is defaulted to a {@link NoTransactionManager}.
+     * <p>
+     * The {@link SpanFactory} is defaulted to a {@link DeadlineManagerSpanFactory} backed by a {@link NoOpSpanFactory}.
+     * <p>
+     * The {@link Scheduler}, {@link ScopeAwareProvider} and {@link Serializer} are <b>hard requirements</b> and as such
+     * should be provided.
      *
-     * @return a Builder to be able to create a {@link QuartzDeadlineManager}
+     * @return a Builder to be able to create a {@code QuartzDeadlineManager}
      */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Instantiate a {@link QuartzDeadlineManager} based on the fields contained in the {@link Builder}.
+     * Instantiate a {@code QuartzDeadlineManager} based on the fields contained in the {@link Builder}.
      * <p>
      * Will assert that the {@link Scheduler}, {@link ScopeAwareProvider}, {@link TransactionManager} and
      * {@link Serializer} are not {@code null}, and will throw an {@link AxonConfigurationException} if any of them is
-     * {@code null}.
-     * The TransactionManager, ScopeAwareProvider and Serializer will be tied to the Scheduler's context. If this
-     * initialization step fails, this will too result in an AxonConfigurationException.
+     * {@code null}. The TransactionManager, ScopeAwareProvider and Serializer will be tied to the Scheduler's context.
+     * If this initialization step fails, this will too result in an AxonConfigurationException.
      *
-     * @param builder the {@link Builder} used to instantiate a {@link QuartzDeadlineManager} instance
+     * @param builder the {@link Builder} used to instantiate a {@code QuartzDeadlineManager} instance
      */
     protected QuartzDeadlineManager(Builder builder) {
         builder.validate();
@@ -104,6 +113,8 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
         this.transactionManager = builder.transactionManager;
         this.serializer = builder.serializer.get();
         this.refireImmediatelyPolicy = builder.refireImmediatelyPolicy;
+        this.spanFactory = builder.spanFactory;
+        this.messageTypeResolver = builder.messageTypeResolver;
 
         try {
             initialize();
@@ -118,71 +129,84 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
         scheduler.getContext().put(DeadlineJob.JOB_DATA_SERIALIZER, serializer);
         scheduler.getContext().put(DeadlineJob.HANDLER_INTERCEPTORS, handlerInterceptors());
         scheduler.getContext().put(DeadlineJob.REFIRE_IMMEDIATELY_POLICY, refireImmediatelyPolicy);
+        scheduler.getContext().put(DeadlineJob.SPAN_FACTORY, spanFactory);
     }
 
     @Override
-    public String schedule(Instant triggerDateTime,
-                           String deadlineName,
+    @SuppressWarnings("rawtypes")
+    public String schedule(@Nonnull Instant triggerDateTime,
+                           @Nonnull String deadlineName,
                            Object messageOrPayload,
-                           ScopeDescriptor deadlineScope) {
+                           @Nonnull ScopeDescriptor deadlineScope) {
         DeadlineMessage<Object> deadlineMessage = asDeadlineMessage(deadlineName, messageOrPayload, triggerDateTime);
         String deadlineId = JOB_NAME_PREFIX + deadlineMessage.getIdentifier();
 
-        runOnPrepareCommitOrNow(() -> {
+        Span span = spanFactory.createScheduleSpan(deadlineName, deadlineId, deadlineMessage);
+        runOnPrepareCommitOrNow(span.wrapRunnable(() -> {
             DeadlineMessage interceptedDeadlineMessage = processDispatchInterceptors(deadlineMessage);
             try {
-                JobDetail jobDetail = buildJobDetail(interceptedDeadlineMessage,
+                JobDetail jobDetail = buildJobDetail(spanFactory.propagateContext(interceptedDeadlineMessage),
                                                      deadlineScope,
                                                      new JobKey(deadlineId, deadlineName));
                 scheduler.scheduleJob(jobDetail, buildTrigger(triggerDateTime, jobDetail.getKey()));
             } catch (SchedulerException e) {
                 throw new DeadlineException("An error occurred while setting a timer for a deadline", e);
             }
-        });
+        }));
 
         return deadlineId;
     }
 
     @Override
-    public String schedule(Duration triggerDuration,
-                           String deadlineName,
+    public String schedule(@Nonnull Duration triggerDuration,
+                           @Nonnull String deadlineName,
                            Object messageOrPayload,
-                           ScopeDescriptor deadlineScope) {
+                           @Nonnull ScopeDescriptor deadlineScope) {
         return schedule(Instant.now().plus(triggerDuration), deadlineName, messageOrPayload, deadlineScope);
     }
 
     @Override
-    public void cancelSchedule(String deadlineName, String scheduleId) {
-        runOnPrepareCommitOrNow(() -> cancelSchedule(jobKey(scheduleId, deadlineName)));
+    public void cancelSchedule(@Nonnull String deadlineName, @Nonnull String scheduleId) {
+        Span span = spanFactory.createCancelScheduleSpan(deadlineName, scheduleId);
+        runOnPrepareCommitOrNow(span.wrapRunnable(() -> cancelSchedule(jobKey(scheduleId, deadlineName))));
     }
 
     @Override
-    public void cancelAll(String deadlineName) {
-        runOnPrepareCommitOrNow(() -> {
+    public void cancelAll(@Nonnull String deadlineName) {
+        Span span = spanFactory.createCancelAllSpan(deadlineName);
+        runOnPrepareCommitOrNow(span.wrapRunnable(() -> {
             try {
                 scheduler.getJobKeys(GroupMatcher.groupEquals(deadlineName))
                          .forEach(this::cancelSchedule);
             } catch (SchedulerException e) {
-                throw new DeadlineException("An error occurred while cancelling a timer for a deadline manager", e);
+                throw new DeadlineException(CANCEL_ERROR_MESSAGE, e);
             }
-        });
+        }));
     }
 
     @Override
-    public void cancelAllWithinScope(String deadlineName, ScopeDescriptor scope) {
-        try {
-            Set<JobKey> jobKeys = scheduler.getJobKeys(GroupMatcher.jobGroupEquals(deadlineName));
-            for (JobKey jobKey : jobKeys) {
-                JobDetail jobDetail = scheduler.getJobDetail(jobKey);
-                ScopeDescriptor jobScope = DeadlineJob.DeadlineJobDataBinder
-                        .deadlineScope(serializer, jobDetail.getJobDataMap());
-                if (scope.equals(jobScope)) {
-                    cancelSchedule(jobKey);
-                }
-            }
-        } catch (SchedulerException e) {
-            throw new DeadlineException("An error occurred while cancelling a timer for a deadline manager", e);
-        }
+    public void cancelAllWithinScope(@Nonnull String deadlineName, @Nonnull ScopeDescriptor scope) {
+        // By serializing and deserializing the ScopeDescriptor we make certain that the givenScope is in the right
+        // format to compare with the outcome from the
+        // DeadlineJob.DeadlineJobDataBinder#deadlineScope(Serializer, JobDataMap) operation.
+        ScopeDescriptor givenScope = serializer.deserialize(serializer.serialize(scope, String.class));
+
+        spanFactory.createCancelAllWithinScopeSpan(deadlineName, givenScope)
+                   .run(() -> {
+                       try {
+                           Set<JobKey> jobKeys = scheduler.getJobKeys(GroupMatcher.jobGroupEquals(deadlineName));
+                           for (JobKey jobKey : jobKeys) {
+                               JobDetail jobDetail = scheduler.getJobDetail(jobKey);
+                               ScopeDescriptor jobScope = DeadlineJob.DeadlineJobDataBinder
+                                       .deadlineScope(serializer, jobDetail.getJobDataMap());
+                               if (givenScope.equals(jobScope)) {
+                                   cancelSchedule(jobKey);
+                               }
+                           }
+                       } catch (SchedulerException e) {
+                           throw new DeadlineException(CANCEL_ERROR_MESSAGE, e);
+                       }
+                   });
     }
 
     private void cancelSchedule(JobKey jobKey) {
@@ -191,33 +215,29 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
                 logger.warn("The job belonging to this token could not be deleted.");
             }
         } catch (SchedulerException e) {
-            throw new DeadlineException("An error occurred while cancelling a timer for a deadline manager", e);
+            throw new DeadlineException(CANCEL_ERROR_MESSAGE, e);
         }
     }
 
+    @SuppressWarnings("rawtypes")
     private JobDetail buildJobDetail(DeadlineMessage deadlineMessage, ScopeDescriptor deadlineScope, JobKey jobKey) {
         JobDataMap jobData = DeadlineJob.DeadlineJobDataBinder.toJobData(serializer, deadlineMessage, deadlineScope);
         return JobBuilder.newJob(DeadlineJob.class)
                          .withDescription(deadlineMessage.getPayloadType().getName())
                          .withIdentity(jobKey)
                          .usingJobData(jobData)
+                         .requestRecovery(true)
                          .build();
     }
 
     private static Trigger buildTrigger(Instant triggerDateTime, JobKey key) {
         return TriggerBuilder.newTrigger()
                              .forJob(key)
-                             .startAt(Date.from(triggerDateTime))
+                             .startAt(from(triggerDateTime))
                              .build();
     }
 
-    /**
-     * {@inheritDoc}
-     * <p>
-     * Will shutdown in the {@link Phase#INBOUND_EVENT_CONNECTORS} phase.
-     */
     @Override
-    @ShutdownHandler(phase = Phase.INBOUND_EVENT_CONNECTORS)
     public void shutdown() {
         try {
             scheduler.shutdown(true);
@@ -229,18 +249,25 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
     /**
      * Builder class to instantiate a {@link QuartzDeadlineManager}.
      * <p>
-     * The {@link TransactionManager} is defaulted to an {@link NoTransactionManager}, and the {@link Serializer} to a
-     * {@link XStreamSerializer}. The {@link Scheduler} and {@link ScopeAwareProvider} are <b>hard requirements</b> and
-     * as such should be provided.
+     * The {@link TransactionManager} is defaulted to a {@link NoTransactionManager} and the
+     * {@link DeadlineManagerSpanFactory} defaults to a {@link DefaultDeadlineManagerSpanFactory} backed by a
+     * {@link NoOpSpanFactory}.
+     * <p>
+     * The {@link Scheduler}, {@link ScopeAwareProvider} and {@link Serializer} are <b>hard requirements</b> and as such
+     * should be provided.
      */
     public static class Builder {
 
         private Scheduler scheduler;
         private ScopeAwareProvider scopeAwareProvider;
         private TransactionManager transactionManager = NoTransactionManager.INSTANCE;
-        private Supplier<Serializer> serializer = XStreamSerializer::defaultSerializer;
+        private Supplier<Serializer> serializer;
         private Predicate<Throwable> refireImmediatelyPolicy =
-                throwable -> !findException(throwable, t -> t instanceof AxonNonTransientException).isPresent();
+                throwable -> !findException(throwable, AxonNonTransientException.class::isInstance).isPresent();
+        private DeadlineManagerSpanFactory spanFactory = DefaultDeadlineManagerSpanFactory.builder()
+                                                                                          .spanFactory(NoOpSpanFactory.INSTANCE)
+                                                                                          .build();
+        private MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
         /**
          * Sets the {@link Scheduler} used for scheduling and triggering purposes of the deadlines.
@@ -284,7 +311,7 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
 
         /**
          * Sets the {@link Serializer} used to de-/serialize the {@link DeadlineMessage} and the {@link ScopeDescriptor}
-         * into the {@link JobDataMap}. Defaults to a {@link XStreamSerializer}.
+         * into the {@link JobDataMap}.
          *
          * @param serializer a {@link Serializer} used to de-/serialize the {@link DeadlineMessage} and the
          *                   {@link ScopeDescriptor} into the {@link JobDataMap}
@@ -297,8 +324,22 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
         }
 
         /**
-         * Sets a {@link Predicate} taking a {@link Throwable} to decided whether a failed {@link DeadlineJob} should
-         * be 'refired' immediately. Defaults to a Predicate which will refire immediately on
+         * Sets the {@link SpanFactory} implementation to use for providing tracing capabilities. Defaults to a
+         * {@link DefaultDeadlineManagerSpanFactory} backed by a {@link NoOpSpanFactory} by default, which provides no
+         * tracing capabilities.
+         *
+         * @param spanFactory The {@link SpanFactory} implementation
+         * @return The current Builder instance, for fluent interfacing.
+         */
+        public Builder spanFactory(@Nonnull DeadlineManagerSpanFactory spanFactory) {
+            assertNonNull(spanFactory, "SpanFactory may not be null");
+            this.spanFactory = spanFactory;
+            return this;
+        }
+
+        /**
+         * Sets a {@link Predicate} taking a {@link Throwable} to decided whether a failed {@link DeadlineJob} should be
+         * 'refired' immediately. Defaults to a Predicate which will refire immediately on
          * non-{@link AxonNonTransientException}s.
          *
          * @param refireImmediatelyPolicy a {@link Predicate} taking a {@link Throwable} to decided whether a failed
@@ -308,6 +349,19 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
         public Builder refireImmediatelyPolicy(Predicate<Throwable> refireImmediatelyPolicy) {
             assertNonNull(refireImmediatelyPolicy, "The refire policy may not be null");
             this.refireImmediatelyPolicy = refireImmediatelyPolicy;
+            return this;
+        }
+
+        /**
+         * Sets the {@link MessageTypeResolver} used to resolve the {@link QualifiedName} when scheduling {@link DeadlineMessage DeadlineMessages}.
+         * If not set, a {@link ClassBasedMessageTypeResolver} is used by default.
+         *
+         * @param messageTypeResolver The {@link MessageTypeResolver} used to provide the {@link QualifiedName} for {@link DeadlineMessage DeadlineMessages}.
+         * @return The current Builder instance, for fluent interfacing.
+         */
+        public Builder messageNameResolver(MessageTypeResolver messageTypeResolver) {
+            assertNonNull(messageTypeResolver, "MessageNameResolver may not be null");
+            this.messageTypeResolver = messageTypeResolver;
             return this;
         }
 
@@ -329,6 +383,7 @@ public class QuartzDeadlineManager extends AbstractDeadlineManager {
         protected void validate() throws AxonConfigurationException {
             assertNonNull(scheduler, "The Scheduler is a hard requirement and should be provided");
             assertNonNull(scopeAwareProvider, "The ScopeAwareProvider is a hard requirement and should be provided");
+            assertNonNull(serializer, "The Serializer is a hard requirement and should be provided");
         }
     }
 }

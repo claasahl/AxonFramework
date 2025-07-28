@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,15 @@
 package org.axonframework.test.aggregate;
 
 import org.axonframework.commandhandling.CommandBus;
-import org.axonframework.commandhandling.CommandHandler;
 import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.commandhandling.CommandResultMessage;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.deadline.DeadlineMessage;
 import org.axonframework.eventhandling.EventBus;
-import org.axonframework.eventhandling.EventHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.eventsourcing.AggregateFactory;
 import org.axonframework.eventsourcing.EventSourcingHandler;
-import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageDispatchInterceptor;
 import org.axonframework.messaging.MessageHandler;
@@ -35,7 +36,7 @@ import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.annotation.ParameterResolver;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
 import org.axonframework.modelling.command.CommandTargetResolver;
-import org.axonframework.modelling.command.Repository;
+import org.axonframework.modelling.command.LegacyRepository;
 import org.axonframework.modelling.command.RepositoryProvider;
 import org.axonframework.test.FixtureExecutionException;
 import org.axonframework.test.matchers.FieldFilter;
@@ -48,15 +49,14 @@ import java.util.function.Supplier;
  * Interface describing the operations available on a test fixture in the configuration stage. This stage allows a test
  * case to prepare the fixture for test execution.
  * <p/>
- * The fixture is initialized using a Command Handler that expects an {@code @CommandHandler} aggregate. If you
- * have implemented your own command handler (either using annotations, or by implementing the {@link MessageHandler}
- * interface), you must register the command handler using {@link #registerAnnotatedCommandHandler(Object)} or {@link
- * #registerCommandHandler(Class, MessageHandler)}, respectively. A typical command
- * handler will require a repository. The test fixture initializes an Event Sourcing Repository, which can be obtained
- * using {@link #getRepository()}. Alternatively, you can register your own repository using the {@link
- * #registerRepository(Repository)} method. Registering the repository
- * will cause the fixture to configure the correct {@link EventBus} and {@link EventStore} implementations required by
- * the test.
+ * The fixture is initialized using a Command Handler that expects an {@code @CommandHandler} aggregate. If you have
+ * implemented your own command handler (either using annotations, or by implementing the {@link MessageHandler}
+ * interface), you must register the command handler using {@link #registerAnnotatedCommandHandler(Object)} or
+ * {@link #registerCommandHandler(Class, MessageHandler)}, respectively. A typical command handler will require a
+ * repository. The test fixture initializes an Event Sourcing Repository, which can be obtained using
+ * {@link #getRepository()}. Alternatively, you can register your own repository using the
+ * {@link #registerRepository(LegacyRepository)} method. Registering the repository will cause the fixture to configure
+ * the correct {@link EventBus} and {@link LegacyEventStore} implementations required by the test.
  * <p/>
  * Typical usage example:<br/> <code>
  * <pre>
@@ -83,8 +83,8 @@ import java.util.function.Supplier;
  * If you use {@code @CommandHandler} annotations on the aggregate, you do not need to configure any additional command
  * handlers. In that case, no configuration is required:
  * <p/>
- * Providing the "given" events using the {@link #given(Object...)} or {@link
- * #given(java.util.List) given(List&lt;DomainEvent&gt;)} methods must be the last operation in the configuration
+ * Providing the "given" events using the {@link #given(Object...)} or
+ * {@link #given(java.util.List) given(List&lt;DomainEvent&gt;)} methods must be the last operation in the configuration
  * stage. To indicate that no "given" events are available, just call {@code given()} with no parameters.
  * <p/>
  * Besides setting configuration, you can also use the FixtureConfiguration to get access to the configured components.
@@ -93,7 +93,9 @@ import java.util.function.Supplier;
  * @param <T> The type of the aggregate under test
  * @author Allard Buijze
  * @since 0.6
+ * @deprecated In favor of the {@link org.axonframework.test.fixture.AxonTestFixture}.
  */
+@Deprecated(since = "5.0.0", forRemoval = true)
 public interface FixtureConfiguration<T> {
 
     /**
@@ -106,6 +108,15 @@ public interface FixtureConfiguration<T> {
     FixtureConfiguration<T> withSubtypes(Class<? extends T>... subtypes);
 
     /**
+     * Configures the fixture for state stored aggregates. This will register an in-memory {@link LegacyRepository} with
+     * this fixture. Should be used before calling {@link FixtureConfiguration#givenState(Supplier)} or
+     * {@link FixtureConfiguration#givenCommands(List)} (Supplier)}.
+     *
+     * @return the current FixtureConfiguration, for fluent interfacing
+     */
+    FixtureConfiguration<T> useStateStorage();
+
+    /**
      * Registers an arbitrary {@code repository} with the fixture. The repository must be wired
      * with the Event Store of this test fixture.
      * <p/>
@@ -116,7 +127,7 @@ public interface FixtureConfiguration<T> {
      * @param repository The repository to use in the test case
      * @return the current FixtureConfiguration, for fluent interfacing
      */
-    FixtureConfiguration<T> registerRepository(Repository<T> repository);
+    FixtureConfiguration<T> registerRepository(LegacyRepository<T> repository);
 
     /**
      * Registers repository provider with the fixture. If an aggregate being tested spawns new aggregates, this
@@ -133,7 +144,7 @@ public interface FixtureConfiguration<T> {
      * constructor to create new instances.
      * <p/>
      * Should not be used in combination with {@link
-     * #registerRepository(Repository)}, as that will overwrite any aggregate factory previously registered.
+     * #registerRepository(LegacyRepository)}, as that will overwrite any aggregate factory previously registered.
      *
      * @param aggregateFactory The Aggregate Factory to create empty aggregates with
      * @return the current FixtureConfiguration, for fluent interfacing
@@ -157,7 +168,7 @@ public interface FixtureConfiguration<T> {
      * @param commandHandler The handler to register
      * @return the current FixtureConfiguration, for fluent interfacing
      */
-    FixtureConfiguration<T> registerCommandHandler(Class<?> payloadType, MessageHandler<CommandMessage<?>> commandHandler);
+    FixtureConfiguration<T> registerCommandHandler(Class<?> payloadType, MessageHandler<CommandMessage<?>, CommandResultMessage<?>> commandHandler);
 
     /**
      * Registers a {@code commandHandler} to handle commands of the given {@code commandType} with the
@@ -167,7 +178,7 @@ public interface FixtureConfiguration<T> {
      * @param commandHandler The handler to register
      * @return the current FixtureConfiguration, for fluent interfacing
      */
-    FixtureConfiguration<T> registerCommandHandler(String commandName, MessageHandler<CommandMessage<?>> commandHandler);
+    FixtureConfiguration<T> registerCommandHandler(String commandName, MessageHandler<CommandMessage<?>, CommandResultMessage<?>> commandHandler);
 
     /**
      * Registers a resource that is eligible for injection in handler method (e.g. methods annotated with {@link
@@ -178,6 +189,22 @@ public interface FixtureConfiguration<T> {
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration<T> registerInjectableResource(Object resource);
+
+    /**
+     * Default implementation to register multiple resources in handler method (e.g. methods annotated with {@link
+     * CommandHandler @CommandHandler}, {@link EventSourcingHandler @EventSourcingHandler} and {@link EventHandler}.
+     * These resource must be registered <em>before</em> registering any command handler.
+     * Internally this method calls {@link #registerInjectableResource(Object) for each resource.
+     *
+     * @param resources collection of resources eligible for injection
+     * @return the current FixtureConfiguration, for fluent interfacing
+     */
+    default FixtureConfiguration<T> registerInjectableResources(Object... resources) {
+        for (Object resource : resources) {
+            registerInjectableResource(resource);
+        }
+        return this;
+    }
 
     /**
      * Registers a {@link ParameterResolverFactory} within this fixture. The given {@code parameterResolverFactory}
@@ -194,26 +221,30 @@ public interface FixtureConfiguration<T> {
     FixtureConfiguration<T> registerParameterResolverFactory(ParameterResolverFactory parameterResolverFactory);
 
     /**
-     * Register a command dispatch interceptor which will always be invoked before a command is dispatched on the
-     * command bus to perform a task specified in the interceptor. For example by adding
-     * {@link MetaData} or throwing an exception based on the command.
+     * Register a {@link MessageDispatchInterceptor} for {@link CommandMessage}s which will be invoked before any
+     * command is dispatched on the {@link CommandBus} to perform a task specified in the interceptor. For example by
+     * adding {@link MetaData} or throwing an exception based on the command.
      *
-     * @param commandDispatchInterceptor the command dispatch interceptor to be added to the command bus
+     * @param commandDispatchInterceptor the {@link MessageDispatchInterceptor} for {@link CommandMessage}s to be added
+     *                                   to this fixture's {@link CommandBus}
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration<T> registerCommandDispatchInterceptor(
-            MessageDispatchInterceptor<? super CommandMessage<?>> commandDispatchInterceptor);
+            MessageDispatchInterceptor<? super CommandMessage<?>> commandDispatchInterceptor
+    );
 
     /**
-     * Register a command handler interceptor which may be invoked before or after the command has been dispatched on
-     * the command bus to perform a task specified in the interceptor. It could for example block the command for
-     * security reasons or add auditing to the command bus
+     * Register a {@link MessageHandlerInterceptor} for {@link CommandMessage}s which will be invoked before or after
+     * the command has been dispatched on the {@link CommandBus} to perform a task specified in the interceptor. It
+     * could for example block the command for security reasons or add auditing to the command bus
      *
-     * @param commandHandlerInterceptor the command handler interceptor to be added to the command bus
+     * @param commandHandlerInterceptor the {@link MessageHandlerInterceptor} for {@link CommandMessage}s to be added to
+     *                                  this fixture's {@link CommandBus}
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration<T> registerCommandHandlerInterceptor(
-            MessageHandlerInterceptor<? super CommandMessage<?>> commandHandlerInterceptor);
+            MessageHandlerInterceptor<? super CommandMessage<?>> commandHandlerInterceptor
+    );
 
     /**
      * Registers a deadline dispatch interceptor which will always be invoked before a deadline is dispatched
@@ -295,67 +326,80 @@ public interface FixtureConfiguration<T> {
     FixtureConfiguration<T> registerCommandTargetResolver(CommandTargetResolver commandTargetResolver);
 
     /**
-     * Configures the given {@code domainEvents} as the "given" events. These are the events returned by the event
-     * store when an aggregate is loaded.
+     * Configures the given {@code domainEvents} as the "given" events. These are the events returned by the event store
+     * when an aggregate is loaded.
      * <p/>
-     * If an item in the given {@code domainEvents} implements {@link Message}, the
-     * payload and meta data from that message are copied into a newly created Domain Event Message. Otherwise, a
-     * Domain Event Message with the item as payload and empty meta data is created.
+     * If an item in the given {@code domainEvents} implements {@link Message}, the payload and {@link MetaData} from
+     * that {@code Message} are copied into a newly created {@link org.axonframework.eventhandling.DomainEventMessage}.
+     * Otherwise, a {@code DomainEventMessage} with the item as payload and empty {@code MetaData} is created.
+     * <p>
+     * Note that transitioning to the returned {@link TestExecutor} will clear any previously defined "given" state to
+     * ensure the fixture can run a clean test environment.
      *
-     * @param domainEvents the domain events the event store should return
-     * @return a TestExecutor instance that can execute the test with this configuration
+     * @param domainEvents The domain events the event store should return.
+     * @return A {@link TestExecutor} instance that can execute the test with this configuration.
      */
     TestExecutor<T> given(Object... domainEvents);
 
     /**
      * Sets the aggregate instance as supplied by given {@code aggregateState} as the initial state for a test case.
      * <p>
-     * Note that usage of this method is highly discouraged for event sourced aggregates. In that case, use
+     * Usage of this method is highly discouraged for event sourced aggregates. In that case, use
      * {@link #given(Object...)} to specify historic events.
+     * <p>
+     * Note that transitioning to the returned {@link TestExecutor} will clear any previously defined "given" state to
+     * ensure the fixture can run a clean test environment.
      *
-     * @param aggregateState a supplier providing the state to use as starting point for this fixture.
-     * @return a TestExecutor instance that can execute the test with this configuration
+     * @param aggregateState A {@link Supplier} providing the state to use as starting point for this fixture.
+     * @return A {@link TestExecutor} instance that can execute the test with this configuration.
      */
     TestExecutor<T> givenState(Supplier<T> aggregateState);
 
     /**
-     * Indicates that no relevant activity has occurred in the past. The behavior of this method is identical to giving
-     * no events in the {@link #given(java.util.List)} method.
+     * Indicates that no relevant activities like commands or events have occurred in the past. This also means that no
+     * previous state is present in the repository.
      *
-     * @return a TestExecutor instance that can execute the test with this configuration
-     *
-     * @since 2.1.1
+     * @return A {@link TestExecutor} instance that can execute the test with this configuration.
      */
     TestExecutor<T> givenNoPriorActivity();
 
     /**
-     * Configures the given {@code domainEvents} as the "given" events. These are the events returned by the event
-     * store when an aggregate is loaded.
+     * Configures the given {@code domainEvents} as the "given" events. These are the events returned by the event store
+     * when an aggregate is loaded.
      * <p/>
-     * If an item in the list implements {@link Message}, the payload and meta data from that
-     * message are copied into a newly created Domain Event Message. Otherwise, a Domain Event Message with the item
-     * as payload and empty meta data is created.
+     * If an item in the list implements {@link Message}, the payload and {@link MetaData} from that {@code Message} are
+     * copied into a newly created {@link org.axonframework.eventhandling.DomainEventMessage}. Otherwise, a
+     * {@code DomainEventMessage} with the item as payload and empty {@code MetaData} is created.
+     * <p>
+     * Note that transitioning to the returned {@link TestExecutor} will clear any previously defined "given" state to
+     * ensure the fixture can run a clean test environment.
      *
-     * @param domainEvents the domain events the event store should return
-     * @return a TestExecutor instance that can execute the test with this configuration
+     * @param domainEvents The domain events the event store should return.
+     * @return A {@link TestExecutor} instance that can execute the test with this configuration.
      */
     TestExecutor<T> given(List<?> domainEvents);
 
     /**
-     * Configures the given {@code commands} as the command that will provide the "given" events. The commands are
-     * executed, and the resulting stored events are captured.
+     * Configures the given {@code commands} as to execute against the aggregate under test to initiate the given-phase.
+     * The commands are executed, and the resulting stored events are captured.
+     * <p>
+     * Note that transitioning to the returned {@link TestExecutor} will clear any previously defined "given" state to
+     * ensure the fixture can run a clean test environment.
      *
-     * @param commands the domain events the event store should return
-     * @return a TestExecutor instance that can execute the test with this configuration
+     * @param commands The commands to execute against the aggregate under test to initiate the given-phase.
+     * @return A {@link TestExecutor} instance that can execute the test with this configuration.
      */
     TestExecutor<T> givenCommands(Object... commands);
 
     /**
-     * Configures the given {@code commands} as the command that will provide the "given" events. The commands are
-     * executed, and the resulting stored events are captured.
+     * Configures the given {@code commands} as to execute against the aggregate under test to initiate the given-phase.
+     * The commands are executed, and the resulting stored events are captured.
+     * <p>
+     * Note that transitioning to the returned {@link TestExecutor} will clear any previously defined "given" state to
+     * ensure the fixture can run a clean test environment.
      *
-     * @param commands the domain events the event store should return
-     * @return a TestExecutor instance that can execute the test with this configuration
+     * @param commands The commands to execute against the aggregate under test to initiate the given-phase.
+     * @return A {@link TestExecutor} instance that can execute the test with this configuration.
      */
     TestExecutor<T> givenCommands(List<?> commands);
 
@@ -381,7 +425,7 @@ public interface FixtureConfiguration<T> {
      *
      * @return the event store used by this fixture
      */
-    EventStore getEventStore();
+    LegacyEventStore getEventStore();
 
     /**
      * Returns the repository used by this fixture. This repository is provided for wiring purposes only. The
@@ -389,14 +433,17 @@ public interface FixtureConfiguration<T> {
      *
      * @return the repository used by this fixture
      */
-    Repository<T> getRepository();
+    LegacyRepository<T> getRepository();
 
     /**
-     * Use this method to indicate a specific moment as the initial current time "known" by the fixture at the start
-     * of the given state.
+     * Use this method to indicate a specific moment as the initial current time "known" by the fixture at the start of
+     * the given state.
+     * <p>
+     * Note that transitioning to the returned {@link TestExecutor} will clear any previously defined "given" state to
+     * ensure the fixture can run a clean test environment.
      *
-     * @param time an {@link Instant} defining the simulated "current time" at which the given state is initialized
-     * @return a TestExecutor instance that can execute the test with this configuration
+     * @param time An {@link Instant} defining the simulated "current time" at which the given state is initialized.
+     * @return A {@link TestExecutor} instance that can execute the test with this configuration.
      */
     TestExecutor<T> givenCurrentTime(Instant time);
 

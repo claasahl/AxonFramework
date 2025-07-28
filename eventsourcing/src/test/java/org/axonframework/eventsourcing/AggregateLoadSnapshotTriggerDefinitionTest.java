@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,23 @@
 
 package org.axonframework.eventsourcing;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import org.axonframework.eventhandling.DomainEventMessage;
+import org.axonframework.eventhandling.GenericDomainEventMessage;
+import org.axonframework.eventsourcing.utils.StubAggregate;
+import org.axonframework.messaging.GenericMessage;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.modelling.command.inspection.AnnotatedAggregate;
+import org.axonframework.modelling.command.inspection.AnnotatedAggregateMetaModelFactory;
+import org.junit.jupiter.api.*;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 
-import org.axonframework.eventhandling.GenericDomainEventMessage;
-import org.axonframework.eventsourcing.utils.StubAggregate;
-import org.axonframework.messaging.GenericMessage;
-import org.axonframework.messaging.MetaData;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.modelling.command.Aggregate;
-import org.axonframework.modelling.command.inspection.AnnotatedAggregate;
-import org.axonframework.modelling.command.inspection.AnnotatedAggregateMetaModelFactory;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link AggregateLoadTimeSnapshotTriggerDefinition}.
@@ -63,7 +55,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
         mockSnapshotter = mock(Snapshotter.class);
         testSubject = new AggregateLoadTimeSnapshotTriggerDefinition(mockSnapshotter, 1000);
         aggregateIdentifier = "aggregateIdentifier";
-        DefaultUnitOfWork.startAndGet(new GenericMessage<>("test"));
+        LegacyDefaultUnitOfWork.startAndGet(new GenericMessage<>(new MessageType("message"), "test"));
         aggregate = AnnotatedAggregate.initialize(
                 new StubAggregate(aggregateIdentifier),
                 AnnotatedAggregateMetaModelFactory.inspectAggregate(StubAggregate.class),
@@ -71,7 +63,6 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
         );
         now = Instant.now();
         AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now, ZoneId.of("UTC"));
-
     }
 
     @AfterEach
@@ -82,14 +73,14 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     }
 
     @Test
-    void testSnapshotterTriggeredOnUnitOfWorkCleanup() {
+    void snapshotterTriggeredOnUnitOfWorkCleanup() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
-        GenericDomainEventMessage<String> msg = new GenericDomainEventMessage<>(
-                "type", aggregateIdentifier, 0, "Mock contents", MetaData.emptyInstance()
+        DomainEventMessage<String> testEvent = new GenericDomainEventMessage<>(
+                "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
         );
         AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
 
-        trigger.eventHandled(msg);
+        trigger.eventHandled(testEvent);
 
         verify(mockSnapshotter, never()).scheduleSnapshot(aggregate.rootType(), aggregateIdentifier);
         CurrentUnitOfWork.get()
@@ -100,15 +91,15 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     }
 
     @Test
-    void testSnapshotterTriggeredOnUnitOfWorkCommit() {
+    void snapshotterTriggeredOnUnitOfWorkCommit() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
         AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
 
-        GenericDomainEventMessage<String> msg = new GenericDomainEventMessage<>(
-                "type", aggregateIdentifier, 0, "Mock contents", MetaData.emptyInstance()
+        DomainEventMessage<String> testEvent = new GenericDomainEventMessage<>(
+                "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
         );
         trigger.initializationFinished();
-        trigger.eventHandled(msg);
+        trigger.eventHandled(testEvent);
 
         verify(mockSnapshotter, never()).scheduleSnapshot(aggregate.rootType(), aggregateIdentifier);
         CurrentUnitOfWork.commit();
@@ -116,15 +107,15 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     }
 
     @Test
-    void testSnapshotterIsNotTriggeredOnUnitOfWorkRollbackIfEventsHandledAfterInitialization() {
+    void snapshotterIsNotTriggeredOnUnitOfWorkRollbackIfEventsHandledAfterInitialization() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
         AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
 
-        GenericDomainEventMessage<String> msg = new GenericDomainEventMessage<>(
-                "type", aggregateIdentifier, 0, "Mock contents", MetaData.emptyInstance()
+        DomainEventMessage<String> testEvent = new GenericDomainEventMessage<>(
+                "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
         );
         trigger.initializationFinished();
-        trigger.eventHandled(msg);
+        trigger.eventHandled(testEvent);
 
         verify(mockSnapshotter, never()).scheduleSnapshot(aggregate.rootType(), aggregateIdentifier);
         CurrentUnitOfWork.get().rollback();
@@ -132,14 +123,14 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     }
 
     @Test
-    void testSnapshotterTriggeredOnUnitOfWorkRollbackWhenEventsHandledBeforeInitialization() {
+    void snapshotterTriggeredOnUnitOfWorkRollbackWhenEventsHandledBeforeInitialization() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
         AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
 
-        GenericDomainEventMessage<String> msg = new GenericDomainEventMessage<>(
-                "type", aggregateIdentifier, 0, "Mock contents", MetaData.emptyInstance()
+        DomainEventMessage<String> testEvent = new GenericDomainEventMessage<>(
+                "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
         );
-        trigger.eventHandled(msg);
+        trigger.eventHandled(testEvent);
         trigger.initializationFinished();
 
         verify(mockSnapshotter, never()).scheduleSnapshot(aggregate.rootType(), aggregateIdentifier);
@@ -148,14 +139,14 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     }
 
     @Test
-    void testSnapshotterNotTriggered() {
+    void snapshotterNotTriggered() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
         AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1000), ZoneId.of("UTC"));
 
-        GenericDomainEventMessage<String> msg = new GenericDomainEventMessage<>(
-                "type", aggregateIdentifier, 0, "Mock contents", MetaData.emptyInstance()
+        DomainEventMessage<String> testEvent = new GenericDomainEventMessage<>(
+                "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
         );
-        trigger.eventHandled(msg);
+        trigger.eventHandled(testEvent);
 
         verify(mockSnapshotter, never()).scheduleSnapshot(aggregate.getClass(), aggregateIdentifier);
         CurrentUnitOfWork.commit();
@@ -163,38 +154,15 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     }
 
     @Test
-    void testThresholdDoesNotResetWhenSerialized() throws IOException, ClassNotFoundException {
+    void scheduleANewSnapshotAfterCommitTrigger() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
         AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
 
-        GenericDomainEventMessage<String> msg = new GenericDomainEventMessage<>(
-                "type", aggregateIdentifier, 0, "Mock contents", MetaData.emptyInstance()
-        );
-        trigger.eventHandled(msg);
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ObjectOutputStream oos = new ObjectOutputStream(baos);
-        oos.writeObject(trigger);
-        trigger = (SnapshotTrigger) new ObjectInputStream(new ByteArrayInputStream(baos.toByteArray())).readObject();
-        testSubject.reconfigure(aggregate.rootType(), trigger);
-        // this triggers the snapshot
-        trigger.eventHandled(msg);
-
-        verify(mockSnapshotter, never()).scheduleSnapshot(aggregate.rootType(), aggregateIdentifier);
-        CurrentUnitOfWork.commit();
-        verify(mockSnapshotter).scheduleSnapshot(aggregate.rootType(), aggregateIdentifier);
-    }
-
-    @Test
-    void testScheduleANewSnapshotAfterCommitTrigger() {
-        SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
-
-        GenericDomainEventMessage<String> msg = new GenericDomainEventMessage<>(
-                "type", aggregateIdentifier, 0, "Mock contents", MetaData.emptyInstance()
+        DomainEventMessage<String> testEvent = new GenericDomainEventMessage<>(
+                "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
         );
         CurrentUnitOfWork.commit();
-        trigger.eventHandled(msg);
+        trigger.eventHandled(testEvent);
         verify(mockSnapshotter).scheduleSnapshot(aggregate.rootType(), aggregateIdentifier);
     }
 }

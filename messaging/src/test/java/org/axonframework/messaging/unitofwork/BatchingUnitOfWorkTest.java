@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package org.axonframework.messaging.unitofwork;
 
 import org.axonframework.messaging.GenericMessage;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.messaging.ResultMessage;
 import org.axonframework.utils.MockException;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,22 +36,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static org.axonframework.messaging.GenericResultMessage.asResultMessage;
-import static org.axonframework.messaging.unitofwork.UnitOfWork.Phase.AFTER_COMMIT;
-import static org.axonframework.messaging.unitofwork.UnitOfWork.Phase.CLEANUP;
-import static org.axonframework.messaging.unitofwork.UnitOfWork.Phase.COMMIT;
-import static org.axonframework.messaging.unitofwork.UnitOfWork.Phase.PREPARE_COMMIT;
-import static org.axonframework.messaging.unitofwork.UnitOfWork.Phase.ROLLBACK;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.axonframework.messaging.unitofwork.LegacyUnitOfWork.Phase.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
+ * Test class validating the {@link LegacyBatchingUnitOfWork}.
+ *
  * @author Rene de Waele
  */
 class BatchingUnitOfWorkTest {
 
     private List<PhaseTransition> transitions;
-    private BatchingUnitOfWork<?> subject;
+    private LegacyBatchingUnitOfWork<?> subject;
 
     @BeforeEach
     void setUp() {
@@ -59,10 +55,10 @@ class BatchingUnitOfWorkTest {
     }
 
     @Test
-    void testExecuteTask() throws Exception {
+    void executeTask() {
         List<Message<?>> messages = Arrays.asList(toMessage(0), toMessage(1), toMessage(2));
-        subject = new BatchingUnitOfWork<>(messages);
-        subject.executeWithResult(() -> {
+        subject = new LegacyBatchingUnitOfWork<>(messages);
+        subject.executeWithResult((ctx) -> {
             registerListeners(subject);
             return resultFor(subject.getMessage());
         });
@@ -73,12 +69,12 @@ class BatchingUnitOfWorkTest {
     }
 
     @Test
-    void testRollback() {
+    void rollback() {
         List<Message<?>> messages = Arrays.asList(toMessage(0), toMessage(1), toMessage(2));
-        subject = new BatchingUnitOfWork<>(messages);
+        subject = new LegacyBatchingUnitOfWork<>(messages);
         MockException e = new MockException();
         try {
-            subject.executeWithResult(() -> {
+            subject.executeWithResult((ctx) -> {
                 registerListeners(subject);
                 if (subject.getMessage().getPayload().equals(1)) {
                     throw e;
@@ -94,10 +90,10 @@ class BatchingUnitOfWorkTest {
     }
 
     @Test
-    void testSuppressedExceptionOnRollback() {
+    void suppressedExceptionOnRollback() {
         List<Message<?>> messages = Arrays.asList(toMessage(0), toMessage(1), toMessage(2));
         AtomicInteger cleanupCounter = new AtomicInteger();
-        subject = new BatchingUnitOfWork<>(messages);
+        subject = new LegacyBatchingUnitOfWork<>(messages);
         MockException taskException = new MockException("task exception");
         MockException commitException = new MockException("commit exception");
         MockException cleanupException = new MockException("cleanup exception");
@@ -108,7 +104,7 @@ class BatchingUnitOfWorkTest {
         subject.onCleanup(u -> cleanupCounter.incrementAndGet());
 
         try {
-            subject.executeWithResult(() -> {
+            subject.executeWithResult((ctx) -> {
                 registerListeners(subject);
                 if (subject.getMessage().getPayload().equals(2)) {
                     subject.addHandler(PREPARE_COMMIT, u -> {
@@ -130,7 +126,7 @@ class BatchingUnitOfWorkTest {
         assertEquals(2, cleanupCounter.get());
     }
 
-    private void registerListeners(UnitOfWork<?> unitOfWork) {
+    private void registerListeners(LegacyUnitOfWork<?> unitOfWork) {
         unitOfWork.onPrepareCommit(u -> transitions.add(new PhaseTransition(u.getMessage(), PREPARE_COMMIT)));
         unitOfWork.onCommit(u -> transitions.add(new PhaseTransition(u.getMessage(), COMMIT)));
         unitOfWork.afterCommit(u -> transitions.add(new PhaseTransition(u.getMessage(), AFTER_COMMIT)));
@@ -139,16 +135,16 @@ class BatchingUnitOfWorkTest {
     }
 
     private static Message<?> toMessage(Object payload) {
-        return new GenericMessage<>(payload);
+        return new GenericMessage<>(new MessageType(payload.getClass()), payload);
     }
 
     public static Object resultFor(Message<?> message) {
         return "Result for: " + message.getPayload();
     }
 
-    private void validatePhaseTransitions(List<UnitOfWork.Phase> phases, List<Message<?>> messages) {
+    private void validatePhaseTransitions(List<LegacyUnitOfWork.Phase> phases, List<Message<?>> messages) {
         Iterator<PhaseTransition> iterator = transitions.iterator();
-        for (UnitOfWork.Phase phase : phases) {
+        for (LegacyUnitOfWork.Phase phase : phases) {
             Iterator<Message<?>> messageIterator = phase.isReverseCallbackOrder()
                     ? new LinkedList<>(messages).descendingIterator() : messages.iterator();
             messageIterator.forEachRemaining(message -> {
@@ -195,6 +191,7 @@ class BatchingUnitOfWorkTest {
                                                       .map(Message::getMetaData)
                                                       .collect(Collectors.toList());
         assertEquals(expectedPayloads.size(), actualPayloads.size());
+        //noinspection SuspiciousMethodCalls
         assertTrue(expectedPayloads.containsAll(actualPayloads));
         assertEquals(expectedExceptions.size(), actualExceptions.size());
         assertTrue(expectedExceptions.containsAll(actualExceptions));
@@ -203,10 +200,10 @@ class BatchingUnitOfWorkTest {
 
     private static class PhaseTransition {
 
-        private final UnitOfWork.Phase phase;
+        private final LegacyUnitOfWork.Phase phase;
         private final Message<?> message;
 
-        public PhaseTransition(Message<?> message, UnitOfWork.Phase phase) {
+        public PhaseTransition(Message<?> message, LegacyUnitOfWork.Phase phase) {
             this.message = message;
             this.phase = phase;
         }

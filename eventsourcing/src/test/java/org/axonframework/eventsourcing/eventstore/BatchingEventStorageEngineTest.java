@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,30 +17,34 @@
 package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.eventhandling.DomainEventMessage;
+import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.MessageType;
 import org.junit.jupiter.api.*;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
-import static org.axonframework.eventsourcing.utils.EventStoreTestUtils.AGGREGATE;
-import static org.axonframework.eventsourcing.utils.EventStoreTestUtils.createEvents;
+import static org.axonframework.eventhandling.DomainEventTestUtils.createDomainEvents;
+import static org.axonframework.eventhandling.EventTestUtils.AGGREGATE;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test class validating the specifics around a {@link BatchingEventStorageEngine}.
+ * Test class validating the specifics around a {@link LegacyBatchingEventStorageEngine}.
  *
  * @author Rene de Waele
  */
 @Transactional
-public abstract class BatchingEventStorageEngineTest<E extends BatchingEventStorageEngine, EB extends BatchingEventStorageEngine.Builder>
+public abstract class BatchingEventStorageEngineTest<E extends LegacyBatchingEventStorageEngine, EB extends LegacyBatchingEventStorageEngine.Builder>
         extends AbstractEventStorageEngineTest<E, EB> {
 
-    private BatchingEventStorageEngine testSubject;
+    private LegacyBatchingEventStorageEngine testSubject;
 
     @Test
-    void testLoadLargeAmountOfEvents() {
+    protected void loadLargeAmountOfEventsFromAggregateStream() {
         int eventCount = testSubject.batchSize() + 10;
-        testSubject.appendEvents(createEvents(eventCount));
+        testSubject.appendEvents(createDomainEvents(eventCount));
+        testSubject.appendEvents(new GenericEventMessage<>(new MessageType("event"), "test"));
         assertEquals(eventCount, testSubject.readEvents(AGGREGATE).asStream().count());
         Optional<? extends DomainEventMessage<?>> resultEventMessage =
                 testSubject.readEvents(AGGREGATE).asStream().reduce((a, b) -> b);
@@ -48,7 +52,22 @@ public abstract class BatchingEventStorageEngineTest<E extends BatchingEventStor
         assertEquals(eventCount - 1, resultEventMessage.get().getSequenceNumber());
     }
 
-    protected void setTestSubject(BatchingEventStorageEngine testSubject) {
+    @Test
+    void loadLargeAmountFromOpenStream() {
+        int eventCount = testSubject.batchSize() + 10;
+        testSubject.appendEvents(createDomainEvents(eventCount));
+        GenericEventMessage<String> last =
+                new GenericEventMessage<>(new MessageType("event"), "test");
+        testSubject.appendEvents(last);
+
+        Optional<? extends EventMessage<?>> resultEventMessage =
+                testSubject.readEvents(null, false).reduce((a, b) -> b);
+        assertEquals(testSubject.batchSize() + 11, testSubject.readEvents(null, false).count());
+        assertTrue(resultEventMessage.isPresent());
+        assertEquals(last.getIdentifier(), resultEventMessage.get().getIdentifier());
+    }
+
+    protected void setTestSubject(LegacyBatchingEventStorageEngine testSubject) {
         super.setTestSubject(this.testSubject = testSubject);
     }
 }

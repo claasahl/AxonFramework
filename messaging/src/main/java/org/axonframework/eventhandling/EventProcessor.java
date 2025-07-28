@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -60,6 +60,23 @@ public interface EventProcessor extends MessageHandlerInterceptorSupport<EventMe
      * Stops processing events. Blocks until the shutdown is complete.
      */
     void shutDown();
+
+    /**
+     * Indicates whether this processor is currently running (i.e. consuming events from its message source).
+     *
+     * @return {@code true} when running, otherwise {@code false}
+     */
+    boolean isRunning();
+
+    /**
+     * Indicates whether the processor has been shut down due to an error. In such case, the processor has forcefully
+     * shut down, as it wasn't able to automatically recover.
+     * <p>
+     * Note that this method returns {@code false} when the processor was stopped using {@link #shutDown()}.
+     *
+     * @return {@code true} when paused due to an error, otherwise {@code false}
+     */
+    boolean isError();
 
     /**
      * Initiates a shutdown, providing a {@link CompletableFuture} that completes when the shutdown process is

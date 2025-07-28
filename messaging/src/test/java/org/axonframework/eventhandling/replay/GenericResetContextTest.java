@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,13 @@
 
 package org.axonframework.eventhandling.replay;
 
-import org.axonframework.messaging.GenericMessage;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
 import org.junit.jupiter.api.*;
 
 import java.util.Collections;
 import java.util.Map;
 
-import static org.axonframework.eventhandling.replay.GenericResetContext.asResetContext;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -33,66 +32,56 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class GenericResetContextTest {
 
+    private static final MessageType TEST_TYPE = new MessageType("reset");
     private static final Object TEST_PAYLOAD = new Object();
 
     @Test
-    void testConstructor() {
-        ResetContext<Object> messageOne = asResetContext(TEST_PAYLOAD);
-        ResetContext<Object> messageTwo = asResetContext(new GenericMessage<>(TEST_PAYLOAD));
-        ResetContext<Object> messageThree = asResetContext(new GenericResetContext<>(TEST_PAYLOAD));
-
-        Map<String, Object> metaDataMap = Collections.singletonMap("key", "value");
-        ResetContext<Object> messageFour = new GenericResetContext<>(TEST_PAYLOAD, metaDataMap);
+    void constructor() {
+        ResetContext<Object> messageOne = new GenericResetContext<>(TEST_TYPE, TEST_PAYLOAD);
+        Map<String, String> metaDataMap = Collections.singletonMap("key", "value");
+        ResetContext<Object> messageTwo = new GenericResetContext<>(TEST_TYPE, TEST_PAYLOAD, metaDataMap);
         MetaData metaData = MetaData.from(metaDataMap);
-        ResetContext<Object> messageFive = new GenericResetContext<>(TEST_PAYLOAD, metaData);
+        ResetContext<Object> messageThree = new GenericResetContext<>(TEST_TYPE, TEST_PAYLOAD, metaData);
 
         assertSame(MetaData.emptyInstance(), messageOne.getMetaData());
         assertEquals(Object.class, messageOne.getPayload().getClass());
         assertEquals(Object.class, messageOne.getPayloadType());
 
-        assertSame(MetaData.emptyInstance(), messageTwo.getMetaData());
+        assertNotSame(metaDataMap, messageTwo.getMetaData());
+        assertEquals(metaDataMap, messageTwo.getMetaData());
         assertEquals(Object.class, messageTwo.getPayload().getClass());
         assertEquals(Object.class, messageTwo.getPayloadType());
 
-        assertSame(MetaData.emptyInstance(), messageThree.getMetaData());
+        assertSame(metaData, messageThree.getMetaData());
         assertEquals(Object.class, messageThree.getPayload().getClass());
         assertEquals(Object.class, messageThree.getPayloadType());
 
-        assertNotSame(metaDataMap, messageFour.getMetaData());
-        assertEquals(metaDataMap, messageFour.getMetaData());
-        assertEquals(Object.class, messageFour.getPayload().getClass());
-        assertEquals(Object.class, messageFour.getPayloadType());
-
-        assertSame(metaData, messageFive.getMetaData());
-        assertEquals(Object.class, messageFive.getPayload().getClass());
-        assertEquals(Object.class, messageFive.getPayloadType());
-
-        assertNotEquals(messageOne.getIdentifier(), messageFour.getIdentifier());
-        assertNotEquals(messageFour.getIdentifier(), messageFive.getIdentifier());
-        assertNotEquals(messageFive.getIdentifier(), messageOne.getIdentifier());
+        assertNotEquals(messageOne.getIdentifier(), messageTwo.getIdentifier());
+        assertNotEquals(messageTwo.getIdentifier(), messageThree.getIdentifier());
+        assertNotEquals(messageThree.getIdentifier(), messageOne.getIdentifier());
     }
 
     @Test
-    void testWithMetaData() {
-        MetaData metaData = MetaData.from(Collections.<String, Object>singletonMap("key", "value"));
-        ResetContext<Object> startMessage = new GenericResetContext<>(TEST_PAYLOAD, metaData);
+    void withMetaData() {
+        MetaData metaData = MetaData.from(Collections.singletonMap("key", "value"));
+        ResetContext<Object> startMessage = new GenericResetContext<>(TEST_TYPE, TEST_PAYLOAD, metaData);
 
         ResetContext<Object> messageOne = startMessage.withMetaData(MetaData.emptyInstance());
         ResetContext<Object> messageTwo =
-                startMessage.withMetaData(MetaData.from(Collections.singletonMap("key", (Object) "otherValue")));
+                startMessage.withMetaData(MetaData.from(Collections.singletonMap("key", "otherValue")));
 
         assertEquals(0, messageOne.getMetaData().size());
         assertEquals(1, messageTwo.getMetaData().size());
     }
 
     @Test
-    void testAndMetaData() {
-        MetaData metaData = MetaData.from(Collections.<String, Object>singletonMap("key", "value"));
-        ResetContext<Object> startMessage = new GenericResetContext<>(TEST_PAYLOAD, metaData);
+    void andMetaData() {
+        MetaData metaData = MetaData.from(Collections.singletonMap("key", "value"));
+        ResetContext<Object> startMessage = new GenericResetContext<>(TEST_TYPE, TEST_PAYLOAD, metaData);
 
         ResetContext<Object> messageOne = startMessage.andMetaData(MetaData.emptyInstance());
         ResetContext<Object> messageTwo =
-                startMessage.andMetaData(MetaData.from(Collections.singletonMap("key", (Object) "otherValue")));
+                startMessage.andMetaData(MetaData.from(Collections.singletonMap("key", "otherValue")));
 
         assertEquals(1, messageOne.getMetaData().size());
         assertEquals("value", messageOne.getMetaData().get("key"));
@@ -101,7 +90,7 @@ class GenericResetContextTest {
     }
 
     @Test
-    void testDescribeType() {
-        assertEquals("GenericResetContext", new GenericResetContext<>(TEST_PAYLOAD).describeType());
+    void describeType() {
+        assertEquals("GenericResetContext", new GenericResetContext<>(TEST_TYPE, TEST_PAYLOAD).describeType());
     }
 }

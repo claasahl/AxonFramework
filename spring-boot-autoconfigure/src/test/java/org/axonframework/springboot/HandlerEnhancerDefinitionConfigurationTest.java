@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package org.axonframework.springboot;
 
 import org.axonframework.config.ProcessingGroup;
-import org.axonframework.eventhandling.EventHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.junit.jupiter.api.*;
@@ -29,6 +29,7 @@ import org.springframework.jmx.support.RegistrationPolicy;
 import org.springframework.test.context.ContextConfiguration;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import jakarta.annotation.Nonnull;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
@@ -39,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Steven van Beelen
  */
+@Disabled("TODO #3496")
 class HandlerEnhancerDefinitionConfigurationTest {
 
     private static final AtomicBoolean VERIFY_ENHANCER = new AtomicBoolean(false);
@@ -49,9 +51,10 @@ class HandlerEnhancerDefinitionConfigurationTest {
     }
 
     @Test
-    void testHandlerEnhancerDefinitionWrapsEventHandler() {
+    void handlerEnhancerDefinitionWrapsEventHandler() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ContextWithHandlers.class)
+                .withPropertyValues("axon.axonserver.enabled=false")
                 .run(context -> {
                     assertThat(context).hasSingleBean(CustomHandlerEnhancerDefinition.class);
                     assertThat(context).hasSingleBean(MyEventHandlingComponent.class);
@@ -61,9 +64,10 @@ class HandlerEnhancerDefinitionConfigurationTest {
     }
 
     @Test
-    void testHandlerEnhancerDefinitionDoesNotWrapInAbsenceOfMessageHandlers() {
+    void handlerEnhancerDefinitionDoesNotWrapInAbsenceOfMessageHandlers() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ContextWithoutHandlers.class)
+                .withPropertyValues("axon.axonserver.enabled=false")
                 .run(context -> {
                     assertThat(context).hasSingleBean(CustomHandlerEnhancerDefinition.class);
 
@@ -101,7 +105,8 @@ class HandlerEnhancerDefinitionConfigurationTest {
     private static class CustomHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
 
         @Override
-        public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+        public @Nonnull
+        <T> MessageHandlingMember<T> wrapHandler(@Nonnull MessageHandlingMember<T> original) {
             VERIFY_ENHANCER.set(true);
             return original;
         }

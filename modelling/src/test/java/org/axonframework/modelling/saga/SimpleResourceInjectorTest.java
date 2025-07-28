@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,17 @@
 
 package org.axonframework.modelling.saga;
 
-import org.axonframework.modelling.utils.MockException;
+import jakarta.annotation.Nonnull;
+import jakarta.inject.Inject;
 import org.axonframework.eventhandling.EventMessage;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.modelling.utils.MockException;
+import org.junit.jupiter.api.*;
 
-import javax.inject.Inject;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Allard Buijze
@@ -35,7 +36,7 @@ class SimpleResourceInjectorTest {
     private SimpleResourceInjector testSubject;
 
     @Test
-    void testInjectFieldResource() {
+    void injectFieldResource() {
         SomeFieldResource expectedFieldResource = new SomeFieldResource();
         testSubject = new SimpleResourceInjector(expectedFieldResource);
         final StubSaga saga = new StubSaga();
@@ -46,7 +47,7 @@ class SimpleResourceInjectorTest {
     }
 
     @Test
-    void testInjectMethodResource() {
+    void injectMethodResource() {
         final SomeMethodResource expectedMethodResource = new SomeMethodResource();
         testSubject = new SimpleResourceInjector(expectedMethodResource);
         final StubSaga saga = new StubSaga();
@@ -57,7 +58,7 @@ class SimpleResourceInjectorTest {
     }
 
     @Test
-    void testInjectFieldAndMethodResources() {
+    void injectFieldAndMethodResources() {
         final SomeFieldResource expectedFieldResource = new SomeFieldResource();
         final SomeMethodResource expectedMethodResource = new SomeMethodResource();
         testSubject = new SimpleResourceInjector(expectedFieldResource, expectedMethodResource);
@@ -70,7 +71,7 @@ class SimpleResourceInjectorTest {
     }
 
     @Test
-    void testInjectResource_ExceptionsIgnored() {
+    void injectResource_ExceptionsIgnored() {
         final SomeMethodResource resource = new SomeMethodResource();
         testSubject = new SimpleResourceInjector(resource, new SomeWeirdResource());
         final StubSaga saga = new StubSaga();
@@ -108,12 +109,12 @@ class SimpleResourceInjectorTest {
         }
 
         @Override
-        public boolean canHandle(EventMessage<?> event) {
+        public boolean canHandle(@Nonnull EventMessage<?> event, @Nonnull ProcessingContext context) {
             return true;
         }
 
         @Override
-        public Object handle(EventMessage event) {
+        public Object handleSync(@Nonnull EventMessage event, @Nonnull ProcessingContext context) {
             return null;
         }
 

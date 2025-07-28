@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 
 package org.axonframework.eventhandling;
 
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.junit.jupiter.api.*;
+
+import jakarta.annotation.Nonnull;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -30,25 +33,26 @@ class EventHandlerInvokerTest {
 
     private final EventHandlerInvoker testSubject = spy(new EventHandlerInvoker() {
         @Override
-        public boolean canHandle(EventMessage<?> eventMessage, Segment segment) {
+        public boolean canHandle(@Nonnull EventMessage<?> eventMessage, @Nonnull ProcessingContext context, @Nonnull Segment segment) {
             return true;
         }
 
         @Override
-        public void handle(EventMessage<?> message, Segment segment) throws Exception {
+        public void handle(@Nonnull EventMessage<?> message, @Nonnull ProcessingContext processingContext,
+                           @Nonnull Segment segment) throws Exception {
             // Do nothing
         }
     });
 
     @Test
-    void testPerformResetWithNullResetContextInvokesPerformReset() {
-        testSubject.performReset(null);
+    void performResetWithNullResetContextInvokesPerformReset() {
+        testSubject.performReset(null, null);
 
-        verify(testSubject).performReset();
+        verify(testSubject).performReset(null);
     }
 
     @Test
-    void testPerformResetWithNonNullThrowsUnsupportedOperationException() {
-        assertThrows(UnsupportedOperationException.class, () -> testSubject.performReset("non-null"));
+    void performResetWithNonNullThrowsUnsupportedOperationException() {
+        assertThrows(UnsupportedOperationException.class, () -> testSubject.performReset("non-null", null));
     }
 }

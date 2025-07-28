@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,20 @@
 package org.axonframework.modelling.command.inspection;
 
 import org.axonframework.commandhandling.CommandMessage;
-import org.axonframework.commandhandling.CommandMessageHandlingMember;
-import org.axonframework.messaging.DefaultInterceptorChain;
+import org.axonframework.commandhandling.annotation.CommandMessageHandlingMember;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.annotation.ChainedMessageHandlerInterceptorMember;
+import org.axonframework.messaging.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.axonframework.modelling.command.AggregateEntityNotFoundException;
+import org.axonframework.messaging.annotation.NoMoreInterceptors;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.modelling.entity.ChildEntityNotFoundException;
 
-import java.lang.annotation.Annotation;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
-import java.util.stream.Collectors;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 /**
  * Implementation of a {@link CommandMessageHandlingMember} that forwards commands to a child entity.
@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  * @author Allard Buijze
  * @since 3.0
  */
-public class ChildForwardingCommandMessageHandlingMember<P, C> implements CommandMessageHandlingMember<P> {
+public class ChildForwardingCommandMessageHandlingMember<P, C> implements ForwardingCommandMessageHandlingMember<P> {
 
     private final List<MessageHandlingMember<? super C>> childHandlingInterceptors;
     private final MessageHandlingMember<? super C> childHandler;
@@ -96,41 +96,39 @@ public class ChildForwardingCommandMessageHandlingMember<P, C> implements Comman
     }
 
     @Override
-    public boolean canHandle(Message<?> message) {
-        return childHandler.canHandle(message);
+    public boolean canForward(CommandMessage<?> message, P target) {
+        return childEntityResolver.apply(message, target) != null;
+    }
+
+    @Override
+    public boolean canHandle(@Nonnull Message<?> message, @Nonnull ProcessingContext context) {
+        return childHandler.canHandle(message, context);
     }
 
     @Override
     @SuppressWarnings("rawtypes")
-    public boolean canHandleMessageType(Class<? extends Message> messageType) {
+    public boolean canHandleMessageType(@Nonnull Class<? extends Message> messageType) {
         return childHandler.canHandleMessageType(messageType);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
-    public Object handle(Message<?> message, P target) throws Exception {
+    public Object handleSync(@Nonnull Message<?> message, @Nonnull ProcessingContext context, @Nullable P target) throws Exception {
         C childEntity = childEntityResolver.apply((CommandMessage<?>) message, target);
         if (childEntity == null) {
-            throw new AggregateEntityNotFoundException(
-                    "Aggregate cannot handle this command, as there is no entity instance to forward it to."
+            throw new ChildEntityNotFoundException(
+                    "Aggregate cannot handle command [" + message.type()
+                            + "], as there is no entity instance within the aggregate to forward it to."
             );
         }
-        List<AnnotatedCommandHandlerInterceptor<? super C>> interceptors =
-                childHandlingInterceptors.stream()
-                                         .filter(chi -> chi.canHandle(message))
-                                         .sorted((chi1, chi2) -> Integer.compare(chi2.priority(), chi1.priority()))
-                                         .map(chi -> new AnnotatedCommandHandlerInterceptor<>(chi, childEntity))
-                                         .collect(Collectors.toList());
 
-        Object result;
-        if (interceptors.isEmpty()) {
-            result = childHandler.handle(message, childEntity);
-        } else {
-            result = new DefaultInterceptorChain<>((UnitOfWork<CommandMessage<?>>) CurrentUnitOfWork.get(),
-                                                   interceptors,
-                                                   m -> childHandler.handle(message, childEntity)).proceed();
-        }
-        return result;
+        return interceptorChain(childEntity.getClass())
+                .handleSync(message, childEntity, childHandler);
+    }
+
+    private MessageHandlerInterceptorMemberChain<C> interceptorChain(Class<?> childType) {
+        return childHandlingInterceptors.isEmpty()
+                ? NoMoreInterceptors.instance()
+                : new ChainedMessageHandlerInterceptorMember<>(childType, childHandlingInterceptors.iterator());
     }
 
     @SuppressWarnings("unchecked")
@@ -143,12 +141,7 @@ public class ChildForwardingCommandMessageHandlingMember<P, C> implements Comman
     }
 
     @Override
-    public Optional<Map<String, Object>> annotationAttributes(Class<? extends Annotation> annotationType) {
-        return childHandler.annotationAttributes(annotationType);
-    }
-
-    @Override
-    public boolean hasAnnotation(Class<? extends Annotation> annotationType) {
-        return childHandler.hasAnnotation(annotationType);
+    public <R> Optional<R> attribute(String attributeKey) {
+        return childHandler.attribute(attributeKey);
     }
 }

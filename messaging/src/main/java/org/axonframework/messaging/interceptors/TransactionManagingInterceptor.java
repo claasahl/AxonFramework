@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,11 @@ import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.messaging.InterceptorChain;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageHandlerInterceptor;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+
+import jakarta.annotation.Nonnull;
 
 /**
  * Interceptor that uses a {@link TransactionManager} to start a new transaction before a Message is handled. When the
@@ -43,10 +47,23 @@ public class TransactionManagingInterceptor<T extends Message<?>> implements Mes
     }
 
     @Override
-    public Object handle(UnitOfWork<? extends T> unitOfWork, InterceptorChain interceptorChain) throws Exception {
+    public Object handle(@Nonnull LegacyUnitOfWork<? extends T> unitOfWork,
+                         @Nonnull ProcessingContext context,
+                         @Nonnull InterceptorChain interceptorChain) throws Exception {
         Transaction transaction = transactionManager.startTransaction();
         unitOfWork.onCommit(u -> transaction.commit());
         unitOfWork.onRollback(u -> transaction.rollback());
-        return interceptorChain.proceed();
+        return interceptorChain.proceedSync(context);
+    }
+
+    @Override
+    public <M extends T, R extends Message<?>> MessageStream<R> interceptOnHandle(@Nonnull M message,
+                                                                                  @Nonnull ProcessingContext context,
+                                                                                  @Nonnull InterceptorChain<M, R> interceptorChain) {
+        Transaction transaction = transactionManager.startTransaction();
+        context.runOnCommit(u -> transaction.commit());
+        context.onError((u, p, e) -> transaction.rollback());
+
+        return interceptorChain.proceed(message, context);
     }
 }

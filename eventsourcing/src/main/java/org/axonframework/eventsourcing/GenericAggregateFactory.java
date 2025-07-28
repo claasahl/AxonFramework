@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,6 +63,7 @@ public class GenericAggregateFactory<T> extends AbstractAggregateFactory<T> {
      *
      * @param aggregateModel the model of aggregate this factory creates instances of
      */
+    @SuppressWarnings("deprecation") // Suppressed ReflectionUtils#ensureAccessible
     public GenericAggregateFactory(AggregateModel<T> aggregateModel) {
         super(aggregateModel);
         aggregateModel.types()

@@ -1,10 +1,11 @@
 /*
- * Copyright (c) 2018. AxonIQ
+ * Copyright (c) 2010-2023. Axon Framework
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,8 +17,9 @@
 package org.axonframework.axonserver.connector.event;
 
 import io.grpc.Server;
-import io.grpc.netty.NettyServerBuilder;
-import org.axonframework.axonserver.connector.PlatformService;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import org.axonframework.axonserver.connector.utils.ContextInterceptor;
+import org.axonframework.axonserver.connector.utils.PlatformService;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
@@ -26,7 +28,7 @@ public class StubServer {
 
     private final Server server;
     private final PlatformService platformService;
-    private int port;
+    private final int port;
 
     public StubServer(int port) {
         this(port, port);
@@ -45,6 +47,7 @@ public class StubServer {
         server = NettyServerBuilder.forPort(port)
                                    .addService(eventStore)
                                    .addService(platformService)
+                                   .intercept(new ContextInterceptor())
                                    .build();
         this.platformService = platformService;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.cfg.MapperConfig;
 import com.fasterxml.jackson.databind.introspect.Annotated;
 import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
+import com.fasterxml.jackson.dataformat.cbor.databind.CBORMapper;
 import com.thoughtworks.xstream.XStream;
 import org.axonframework.serialization.json.JacksonSerializer;
+import org.axonframework.serialization.xml.CompactDriver;
 import org.axonframework.serialization.xml.XStreamSerializer;
 
 import java.beans.ConstructorProperties;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.EnumSet;
 
@@ -38,33 +39,13 @@ import java.util.EnumSet;
 @SuppressWarnings("unused")
 public enum TestSerializer {
 
-    JAVA {
-        @SuppressWarnings("deprecation")
-        private final Serializer serializer = JavaSerializer.builder().build();
-
-        @Override
-        public Serializer getSerializer() {
-            return serializer;
-        }
-
-        @Override
-        protected String serialize(Object object) {
-            return Base64.getEncoder().encodeToString(getSerializer().serialize(object, byte[].class).getData());
-        }
-
-        @Override
-        protected <T> T deserialize(String serialized, Class<T> type) {
-            return getSerializer().deserialize(asSerializedData(Base64.getDecoder().decode(serialized), type));
-        }
-    },
     XSTREAM {
         private final Serializer serializer = createSerializer();
 
         private XStreamSerializer createSerializer() {
-            XStream xStream = new XStream();
-            xStream.setClassLoader(this.getClass().getClassLoader());
-            xStream.allowTypesByWildcard(new String[]{"org.axonframework.**"});
-            return XStreamSerializer.builder().xStream(xStream).build();
+            return XStreamSerializer.builder()
+                                    .xStream(new XStream(new CompactDriver()))
+                                    .build();
         }
 
         @Override
@@ -73,7 +54,19 @@ public enum TestSerializer {
         }
     },
     JACKSON {
-        private final Serializer serializer = JacksonSerializer.builder().build();
+        private final Serializer serializer = JacksonSerializer.defaultSerializer();
+
+        @Override
+        public Serializer getSerializer() {
+            return serializer;
+        }
+    },
+    CBOR {
+        private final Serializer serializer = JacksonSerializer.builder()
+                .objectMapper(CBORMapper
+                        .builder()
+                        .findAndAddModules()
+                        .build()).build();
 
         @Override
         public Serializer getSerializer() {
@@ -92,12 +85,12 @@ public enum TestSerializer {
         }
     };
 
-    protected String serialize(Object object) {
-        return new String(getSerializer().serialize(object, byte[].class).getData());
+    protected byte[] serialize(Object object) {
+        return getSerializer().serialize(object, byte[].class).getData();
     }
 
-    protected <T> T deserialize(String serialized, Class<T> type) {
-        return getSerializer().deserialize(asSerializedData(serialized.getBytes(), type));
+    protected <T> T deserialize(byte[] serialized, Class<T> type) {
+        return getSerializer().deserialize(asSerializedData(serialized, type));
     }
 
     public abstract Serializer getSerializer();
@@ -117,8 +110,6 @@ public enum TestSerializer {
     }
 
     private static class OnlyAcceptConstructorPropertiesAnnotation extends JacksonAnnotationIntrospector {
-
-        private static final long serialVersionUID = 1L;
 
         public static ObjectMapper attachTo(ObjectMapper objectMapper) {
             return objectMapper.setAnnotationIntrospector(new OnlyAcceptConstructorPropertiesAnnotation());

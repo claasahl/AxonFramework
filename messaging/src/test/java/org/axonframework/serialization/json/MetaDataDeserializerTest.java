@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,29 +21,25 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import org.axonframework.messaging.MetaData;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.*;
+import org.junit.jupiter.params.provider.*;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
+import static org.junit.jupiter.api.Assertions.*;
 
 class MetaDataDeserializerTest {
 
     public static Stream<Arguments> objectMappers() {
         return Stream.of(null,
-                ObjectMapper.DefaultTyping.JAVA_LANG_OBJECT,
-                ObjectMapper.DefaultTyping.NON_CONCRETE_AND_ARRAYS,
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                ObjectMapper.DefaultTyping.OBJECT_AND_NON_CONCRETE)
-                .map(defaultTyping -> Arguments.of(objectMapper(defaultTyping), defaultTyping));
+                         ObjectMapper.DefaultTyping.JAVA_LANG_OBJECT,
+                         ObjectMapper.DefaultTyping.NON_CONCRETE_AND_ARRAYS,
+                         ObjectMapper.DefaultTyping.NON_FINAL,
+                         ObjectMapper.DefaultTyping.OBJECT_AND_NON_CONCRETE)
+                     .map(defaultTyping -> Arguments.of(objectMapper(defaultTyping), defaultTyping));
     }
 
     private static ObjectMapper objectMapper(ObjectMapper.DefaultTyping defaultTyping) {
@@ -52,14 +48,14 @@ class MetaDataDeserializerTest {
                 new SimpleModule("Axon-Jackson Module").addDeserializer(MetaData.class, new MetaDataDeserializer()));
 
         if (defaultTyping != null) {
-            objectMapper.enableDefaultTyping(defaultTyping);
+            objectMapper.activateDefaultTyping(objectMapper.getPolymorphicTypeValidator(), defaultTyping);
         }
         return objectMapper;
     }
 
     @MethodSource("objectMappers")
     @ParameterizedTest
-    void testMetaDataSerializationWithDefaultTyping(ObjectMapper objectMapper) throws IOException {
+    void metaDataSerializationWithDefaultTyping(ObjectMapper objectMapper) throws IOException {
         MetaData metaData = new MetaData(Collections.singletonMap("one", "two"));
         String serializedString = objectMapper.writeValueAsString(metaData);
 
@@ -70,7 +66,7 @@ class MetaDataDeserializerTest {
 
     @MethodSource("objectMappers")
     @ParameterizedTest
-    void testEmptyMetaDataSerializationWithDefaultTyping(ObjectMapper objectMapper) throws IOException {
+    void emptyMetaDataSerializationWithDefaultTyping(ObjectMapper objectMapper) throws IOException {
         MetaData metaData1 = new MetaData(new HashMap<>());
         String emptySerializedString = objectMapper.writeValueAsString(metaData1);
 
@@ -82,7 +78,7 @@ class MetaDataDeserializerTest {
 
     @MethodSource("objectMappers")
     @ParameterizedTest
-    void testMetaDataContainerWithDefaultTyping(ObjectMapper objectMapper) throws IOException {
+    void metaDataContainerWithDefaultTyping(ObjectMapper objectMapper) throws IOException {
         MetaData metaData = new MetaData(Collections.singletonMap("one", "two"));
 
         Container container = new Container("a", metaData, 1);
@@ -92,29 +88,6 @@ class MetaDataDeserializerTest {
         assertEquals("two", deserialized.b.get("one"));
 
         assertEquals(serializedContainerString, objectMapper.writeValueAsString(deserialized));
-    }
-
-    @MethodSource("objectMappers")
-    @ParameterizedTest
-    void testMetaDataContainerWithDataInDataWithDefaultTyping(ObjectMapper objectMapper, ObjectMapper.DefaultTyping defaultTyping) throws IOException {
-        MetaData metaData = new MetaData(Collections.singletonMap("one", "two"));
-
-        Map<String, Object> map2 = new HashMap<>();
-        map2.put("one", metaData);
-        MetaData dataInData = new MetaData(map2);
-        Container container2 = new Container("a", dataInData, 1);
-        String serializedDataInDataString = objectMapper.writeValueAsString(container2);
-
-        Container deserialized = objectMapper.readValue(serializedDataInDataString, Container.class);
-        if (defaultTyping != null) {
-            assertEquals(((MetaData) deserialized.b.get("one")).get("one"), "two");
-        }
-        else {
-            // as there is no typing information, Jackson can't know it's a MetaData entry
-            assertEquals(((Map) deserialized.b.get("one")).get("one"), "two");
-        }
-
-        assertEquals(serializedDataInDataString, objectMapper.writeValueAsString(deserialized));
     }
 
     public static class Container {
@@ -157,5 +130,4 @@ class MetaDataDeserializerTest {
             this.c = c;
         }
     }
-
 }

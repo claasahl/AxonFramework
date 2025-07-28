@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,6 @@ package org.axonframework.common;
  * @since 0.7
  */
 public class AxonConfigurationException extends AxonNonTransientException {
-
-    private static final long serialVersionUID = 4369033925877210475L;
 
     /**
      * Initializes the exception using the given {@code message}.

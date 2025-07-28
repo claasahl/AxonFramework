@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.axonframework.eventhandling;
 
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
@@ -35,29 +37,32 @@ class MultiEventHandlerInvokerTest {
 
     private MultiEventHandlerInvoker testSubject;
 
-    private EventHandlerInvoker mockedEventHandlerInvokerOne = mock(EventHandlerInvoker.class);
-    private EventHandlerInvoker mockedEventHandlerInvokerTwo = mock(EventHandlerInvoker.class);
+    private final EventHandlerInvoker mockedEventHandlerInvokerOne = mock(EventHandlerInvoker.class);
+    private final EventHandlerInvoker mockedEventHandlerInvokerTwo = mock(EventHandlerInvoker.class);
 
     private EventMessage<String> testEventMessage;
+    private ProcessingContext context;
     private EventMessage<String> replayMessage;
     private Segment testSegment;
 
     @BeforeEach
     void setUp() {
-        testEventMessage = GenericEventMessage.asEventMessage("some-event");
-        replayMessage = new GenericTrackedEventMessage<>(new ReplayToken(new GlobalSequenceTrackingToken(10),
-                                                                         new GlobalSequenceTrackingToken(0)),
-                                                         GenericEventMessage.asEventMessage("replay-event"));
+        testEventMessage = EventTestUtils.asEventMessage("some-event");
+        context = StubProcessingContext.forMessage(testEventMessage);
+        TrackingToken testToken = ReplayToken.createReplayToken(
+                new GlobalSequenceTrackingToken(10), new GlobalSequenceTrackingToken(0)
+        );
+        replayMessage = new GenericTrackedEventMessage<>(testToken, EventTestUtils.asEventMessage("replay-event"));
         testSegment = new Segment(1, 1);
 
-        when(mockedEventHandlerInvokerOne.canHandle(any(), eq(testSegment))).thenReturn(true);
-        when(mockedEventHandlerInvokerTwo.canHandle(any(), eq(testSegment))).thenReturn(true);
+        when(mockedEventHandlerInvokerOne.canHandle(any(), any(), eq(testSegment))).thenReturn(true);
+        when(mockedEventHandlerInvokerTwo.canHandle(any(), any(), eq(testSegment))).thenReturn(true);
 
         testSubject = new MultiEventHandlerInvoker(mockedEventHandlerInvokerOne, mockedEventHandlerInvokerTwo);
     }
 
     @Test
-    void testDelegatesReturnsSetDelegates() {
+    void delegatesReturnsSetDelegates() {
         List<EventHandlerInvoker> result = testSubject.delegates();
 
         assertTrue(result.contains(mockedEventHandlerInvokerOne));
@@ -65,32 +70,32 @@ class MultiEventHandlerInvokerTest {
     }
 
     @Test
-    void testCanHandleCallsCanHandleOnTheFirstDelegateToReturn() {
-        testSubject.canHandle(testEventMessage, testSegment);
+    void canHandleCallsCanHandleOnTheFirstDelegateToReturn() {
+        testSubject.canHandle(testEventMessage, context, testSegment);
 
-        verify(mockedEventHandlerInvokerOne).canHandle(testEventMessage, testSegment);
-        verifyZeroInteractions(mockedEventHandlerInvokerTwo);
+        verify(mockedEventHandlerInvokerOne).canHandle(testEventMessage, context, testSegment);
+        verifyNoInteractions(mockedEventHandlerInvokerTwo);
     }
 
     @Test
-    void testHandleCallsCanHandleAndHandleOfAllDelegates() throws Exception {
-        testSubject.handle(testEventMessage, testSegment);
+    void handleCallsCanHandleAndHandleOfAllDelegates() throws Exception {
+        testSubject.handle(testEventMessage, context, testSegment);
 
-        verify(mockedEventHandlerInvokerOne).canHandle(testEventMessage, testSegment);
-        verify(mockedEventHandlerInvokerOne).handle(testEventMessage, testSegment);
-        verify(mockedEventHandlerInvokerTwo).canHandle(testEventMessage, testSegment);
-        verify(mockedEventHandlerInvokerTwo).handle(testEventMessage, testSegment);
+        verify(mockedEventHandlerInvokerOne).canHandle(testEventMessage, context, testSegment);
+        verify(mockedEventHandlerInvokerOne).handle(testEventMessage, context, testSegment);
+        verify(mockedEventHandlerInvokerTwo).canHandle(testEventMessage, context, testSegment);
+        verify(mockedEventHandlerInvokerTwo).handle(testEventMessage, context, testSegment);
     }
 
     @Test
-    void testHandleThrowsExceptionIfDelegatesThrowAnException() throws Exception {
-        doThrow(new RuntimeException()).when(mockedEventHandlerInvokerTwo).handle(testEventMessage, testSegment);
+    void handleThrowsExceptionIfDelegatesThrowAnException() throws Exception {
+        doThrow(new RuntimeException()).when(mockedEventHandlerInvokerTwo).handle(testEventMessage, null, testSegment);
 
-        assertThrows(RuntimeException.class, () -> testSubject.handle(testEventMessage, testSegment));
+        assertThrows(RuntimeException.class, () -> testSubject.handle(testEventMessage, null, testSegment));
     }
 
     @Test
-    void testSupportResetWhenAllSupport() {
+    void supportResetWhenAllSupport() {
         when(mockedEventHandlerInvokerOne.supportsReset()).thenReturn(true);
         when(mockedEventHandlerInvokerTwo.supportsReset()).thenReturn(true);
 
@@ -98,7 +103,7 @@ class MultiEventHandlerInvokerTest {
     }
 
     @Test
-    void testSupportResetWhenSomeSupport() {
+    void supportResetWhenSomeSupport() {
         when(mockedEventHandlerInvokerOne.supportsReset()).thenReturn(true);
         when(mockedEventHandlerInvokerTwo.supportsReset()).thenReturn(false);
 
@@ -106,7 +111,7 @@ class MultiEventHandlerInvokerTest {
     }
 
     @Test
-    void testSupportResetWhenNoneSupport() {
+    void supportResetWhenNoneSupport() {
         when(mockedEventHandlerInvokerOne.supportsReset()).thenReturn(false);
         when(mockedEventHandlerInvokerTwo.supportsReset()).thenReturn(false);
 
@@ -114,52 +119,52 @@ class MultiEventHandlerInvokerTest {
     }
 
     @Test
-    void testPerformReset() {
+    void performReset() {
         when(mockedEventHandlerInvokerOne.supportsReset()).thenReturn(true);
         when(mockedEventHandlerInvokerTwo.supportsReset()).thenReturn(false);
 
-        testSubject.performReset();
+        testSubject.performReset(null);
 
-        verify(mockedEventHandlerInvokerOne, times(1)).performReset(eq(NO_RESET_PAYLOAD));
-        verify(mockedEventHandlerInvokerTwo, never()).performReset(eq(NO_RESET_PAYLOAD));
+        verify(mockedEventHandlerInvokerOne, times(1)).performReset(eq(NO_RESET_PAYLOAD), isNull());
+        verify(mockedEventHandlerInvokerTwo, never()).performReset(eq(NO_RESET_PAYLOAD), isNull());
     }
 
     @Test
-    void testPerformResetWithResetContext() {
+    void performResetWithResetContext() {
         String resetContext = "reset-context";
 
         when(mockedEventHandlerInvokerOne.supportsReset()).thenReturn(true);
         when(mockedEventHandlerInvokerTwo.supportsReset()).thenReturn(false);
 
-        testSubject.performReset(resetContext);
+        testSubject.performReset(resetContext, null);
 
-        verify(mockedEventHandlerInvokerOne, times(1)).performReset(eq(resetContext));
-        verify(mockedEventHandlerInvokerTwo, never()).performReset(eq(resetContext));
+        verify(mockedEventHandlerInvokerOne, times(1)).performReset(eq(resetContext), isNull());
+        verify(mockedEventHandlerInvokerTwo, never()).performReset(eq(resetContext), isNull());
     }
 
     @Test
-    void testInvokersNotSupportingResetDoNotReceiveRedeliveries() throws Exception {
+    void invokersNotSupportingResetDoNotReceiveRedeliveries() throws Exception {
         when(mockedEventHandlerInvokerOne.supportsReset()).thenReturn(true);
         when(mockedEventHandlerInvokerTwo.supportsReset()).thenReturn(false);
 
-        assertTrue(testSubject.canHandle(testEventMessage, testSegment));
-        testSubject.handle(testEventMessage, testSegment);
-        testSubject.handle(replayMessage, testSegment);
+        assertTrue(testSubject.canHandle(testEventMessage, context, testSegment));
+        testSubject.handle(testEventMessage, context, testSegment);
+        testSubject.handle(replayMessage, context, testSegment);
 
         InOrder inOrder = inOrder(mockedEventHandlerInvokerOne, mockedEventHandlerInvokerTwo);
-        inOrder.verify(mockedEventHandlerInvokerOne).handle(testEventMessage, testSegment);
-        inOrder.verify(mockedEventHandlerInvokerTwo).handle(testEventMessage, testSegment);
-        inOrder.verify(mockedEventHandlerInvokerOne).handle(replayMessage, testSegment);
+        inOrder.verify(mockedEventHandlerInvokerOne).handle(testEventMessage, context, testSegment);
+        inOrder.verify(mockedEventHandlerInvokerTwo).handle(testEventMessage, context, testSegment);
+        inOrder.verify(mockedEventHandlerInvokerOne).handle(replayMessage, context, testSegment);
 
-        verify(mockedEventHandlerInvokerTwo, never()).handle(eq(replayMessage), any());
+        verify(mockedEventHandlerInvokerTwo, never()).handle(eq(replayMessage), isNull(), any());
     }
 
     @Test
-    void testPerformResetThrowsException() {
+    void performResetThrowsException() {
         when(mockedEventHandlerInvokerOne.supportsReset()).thenReturn(true);
         when(mockedEventHandlerInvokerTwo.supportsReset()).thenReturn(false);
-        doThrow(RuntimeException.class).when(mockedEventHandlerInvokerOne).performReset(any());
+        doThrow(RuntimeException.class).when(mockedEventHandlerInvokerOne).performReset(any(), isNull());
 
-        assertThrows(Exception.class, testSubject::performReset);
+        assertThrows(Exception.class, () -> testSubject.performReset(null));
     }
 }

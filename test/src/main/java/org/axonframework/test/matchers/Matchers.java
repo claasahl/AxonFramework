@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2014. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -156,32 +156,46 @@ public abstract class Matchers {
     }
 
     /**
-     * Matches against each event of the same runtime type that has all field values equal to the fields in the
-     * expected
-     * event. All fields are compared, except for the aggregate identifier and sequence number, as they are generally
-     * not set on the expected event.
+     * Returns a Matcher that matches with exact class type defined by the given {@code expected}.
      *
-     * @param expected The event with the expected field values
-     * @param <T>      The type of event to match against
-     * @return a matcher that matches based on the equality of field values
+     * @param expected The expected class
+     * @param <T>      The object type to match the given {@code expected} class with.
+     * @return a matcher that matches based on the class
      */
-    public static <T> EqualFieldsMatcher<T> equalTo(T expected) {
-        return new EqualFieldsMatcher<>(expected);
+    public static <T> Matcher<T> exactClassOf(Class<T> expected) {
+        return new ExactClassMatcher<>(expected);
     }
 
     /**
-     * Matches against each event of the same runtime type that has all field values equal to the fields in the
-     * expected
-     * event. All fields are compared, except for the aggregate identifier and sequence number, as they are generally
-     * not set on the expected event.
+     * Constructs a deep equals {@link Matcher}. This {@code Matcher} will first perform a regular equals check based on
+     * the given {@code expected} and {@code actual} (provided during the {@link Matcher#matches(Object)} invocation).
+     * If this fails and given type <em>does not</em> override {@link Object#equals(Object)}, this {@code Matcher} will
+     * match the fields of the given {@code expected} and {@code actual}.
      *
-     * @param expected The event with the expected field values
-     * @param filter   The filter describing the Fields to include in the comparison
-     * @param <T>      The type of event to match against
-     * @return a matcher that matches based on the equality of field values
+     * @param expected The object to match against.
+     * @param <T>      The type of object to match against.
+     * @return A matcher matching on {@link Object#equals(Object)} firstly, followed by field value equality if equals
+     * isn't implemented.
      */
-    public static <T> EqualFieldsMatcher<T> equalTo(T expected, FieldFilter filter) {
-        return new EqualFieldsMatcher<>(expected, filter);
+    public static <T> Matcher<T> deepEquals(T expected) {
+        return deepEquals(expected, AllFieldsFilter.instance());
+    }
+
+    /**
+     * Constructs a deep equals {@link Matcher}. This {@code Matcher} will first perform a regular equals check based on
+     * the given {@code expected} and {@code actual} (provided during the {@link Matcher#matches(Object)} invocation).
+     * If this fails and given type <em>does not</em> override {@link Object#equals(Object)}, this {@code Matcher} will
+     * match the fields of the given {@code expected} and {@code actual}. Fields can be in- or excluded for this last
+     * step through the {@code filter}.
+     *
+     * @param expected The object to match against.
+     * @param filter   The filter describing the Fields to include in the comparison.
+     * @param <T>      The type of object to match against.
+     * @return A matcher matching on {@link Object#equals(Object)} firstly, followed by field value equality if equals
+     * isn't implemented.
+     */
+    public static <T> Matcher<T> deepEquals(T expected, FieldFilter filter) {
+        return new DeepEqualsMatcher<>(expected, filter);
     }
 
     /**

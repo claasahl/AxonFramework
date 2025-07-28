@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,14 @@ import org.axonframework.common.transaction.NoTransactionManager;
 import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
-import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.axonframework.modelling.command.ConcurrencyException;
+import org.axonframework.tracing.NoOpSpanFactory;
+import org.axonframework.tracing.Span;
+import org.axonframework.tracing.SpanFactory;
+import org.axonframework.tracing.SpanScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +38,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import jakarta.annotation.Nonnull;
 
+import static java.lang.String.format;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
@@ -50,16 +56,17 @@ public abstract class AbstractSnapshotter implements Snapshotter {
 
     private static final Logger logger = LoggerFactory.getLogger(AbstractSnapshotter.class);
 
-    private final EventStore eventStore;
+    private final LegacyEventStore eventStore;
     private final Executor executor;
     private final TransactionManager transactionManager;
     private final Set<AggregateTypeId> snapshotsInProgress = ConcurrentHashMap.newKeySet();
+    private final SnapshotterSpanFactory spanFactory;
 
     /**
      * Instantiate a {@link AbstractSnapshotter} based on the fields contained in the {@link Builder}.
      * <p>
-     * Will assert that the {@link EventStore} is not {@code null}, and will throw an
-     * {@link AxonConfigurationException} if it is {@code null}.
+     * Will assert that the {@link LegacyEventStore} is not {@code null}, and will throw an {@link AxonConfigurationException}
+     * if it is {@code null}.
      *
      * @param builder the {@link Builder} used to instantiate a {@link AbstractSnapshotter} instance
      */
@@ -68,11 +75,12 @@ public abstract class AbstractSnapshotter implements Snapshotter {
         this.eventStore = builder.eventStore;
         this.executor = builder.executor;
         this.transactionManager = builder.transactionManager;
+        this.spanFactory = builder.builderSpanFactory;
     }
 
     @Override
-    public void scheduleSnapshot(Class<?> aggregateType, String aggregateIdentifier) {
-        if (CurrentUnitOfWork.isStarted() && CurrentUnitOfWork.get().phase().isBefore(UnitOfWork.Phase.COMMIT)) {
+    public void scheduleSnapshot(@Nonnull Class<?> aggregateType, @Nonnull String aggregateIdentifier) {
+        if (CurrentUnitOfWork.isStarted() && CurrentUnitOfWork.get().phase().isBefore(LegacyUnitOfWork.Phase.COMMIT)) {
             CurrentUnitOfWork.get().afterCommit(u -> doScheduleSnapshot(aggregateType, aggregateIdentifier));
         } else {
             doScheduleSnapshot(aggregateType, aggregateIdentifier);
@@ -91,13 +99,19 @@ public abstract class AbstractSnapshotter implements Snapshotter {
             }
         }
         if (snapshotsInProgress.add(typeAndId)) {
-            try {
-                executor.execute(
-                        silently(() -> transactionManager.executeInTransaction(createSnapshotterTask(aggregateType, aggregateIdentifier)))
-                                .andFinally(() -> snapshotsInProgress.remove(typeAndId)));
+            Span span = spanFactory.createScheduleSnapshotSpan(aggregateType.getSimpleName(), aggregateIdentifier).start();
+            try(SpanScope unused = span.makeCurrent()) {
+                Span internalSpan = spanFactory.createCreateSnapshotSpan(aggregateType.getSimpleName(), aggregateIdentifier);
+                executor.execute(silently(internalSpan.wrapRunnable(
+                        () -> transactionManager.executeInTransaction(
+                                createSnapshotterTask(aggregateType, aggregateIdentifier)))
+                ).andFinally(() -> snapshotsInProgress.remove(typeAndId)));
             } catch (Exception e) {
                 snapshotsInProgress.remove(typeAndId);
+                span.recordException(e);
                 throw e;
+            } finally {
+                span.end();
             }
         }
     }
@@ -111,7 +125,6 @@ public abstract class AbstractSnapshotter implements Snapshotter {
      *
      * @param aggregateType       The type of the aggregate to create a snapshot for
      * @param aggregateIdentifier The identifier of the aggregate to create a snapshot for
-     *
      * @return the task containing snapshot creation logic
      */
     protected Runnable createSnapshotterTask(Class<?> aggregateType, String aggregateIdentifier) {
@@ -135,7 +148,7 @@ public abstract class AbstractSnapshotter implements Snapshotter {
      *
      * @return the event store this snapshotter uses to load domain events and store snapshot events.
      */
-    protected EventStore getEventStore() {
+    protected LegacyEventStore getEventStore() {
         return eventStore;
     }
 
@@ -149,6 +162,7 @@ public abstract class AbstractSnapshotter implements Snapshotter {
     }
 
     private static class AggregateTypeId {
+
         private final Class<?> aggregateType;
         private final String aggregateIdentifier;
 
@@ -179,25 +193,27 @@ public abstract class AbstractSnapshotter implements Snapshotter {
     /**
      * Abstract Builder class to instantiate {@link AbstractSnapshotter} implementations.
      * <p>
-     * The {@link Executor} is defaulted to an {@link DirectExecutor#INSTANCE} and the {@link TransactionManager}
-     * defaults to a {@link NoTransactionManager}. The {@link EventStore} is a <b>hard requirement</b> and as such
-     * should be provided.
+     * The {@link Executor} is defaulted to an {@link DirectExecutor#INSTANCE}, the {@link TransactionManager} defaults
+     * to a {@link NoTransactionManager}, and the {@link SnapshotterSpanFactory} defaults to a
+     * {@link DefaultSnapshotterSpanFactory} with a {@link NoOpSpanFactory} delegate. The
+     * {@link LegacyEventStore} is a <b>hard requirement</b> and as such should be provided.
      */
     public abstract static class Builder {
 
-        private EventStore eventStore;
+        private LegacyEventStore eventStore;
         private Executor executor = DirectExecutor.INSTANCE;
         private TransactionManager transactionManager = NoTransactionManager.INSTANCE;
+        private SnapshotterSpanFactory builderSpanFactory = DefaultSnapshotterSpanFactory.builder().spanFactory(NoOpSpanFactory.INSTANCE).build();
 
         /**
-         * Sets the {@link EventStore} instance which this {@link AbstractSnapshotter} implementation will store
+         * Sets the {@link LegacyEventStore} instance which this {@link AbstractSnapshotter} implementation will store
          * snapshots in.
          *
-         * @param eventStore the {@link EventStore} instance which this {@link AbstractSnapshotter} implementation will
+         * @param eventStore the {@link LegacyEventStore} instance which this {@link AbstractSnapshotter} implementation will
          *                   store snapshots in
          * @return the current Builder instance, for fluent interfacing
          */
-        public Builder eventStore(EventStore eventStore) {
+        public Builder eventStore(LegacyEventStore eventStore) {
             assertNonNull(eventStore, "EventStore may not be null");
             this.eventStore = eventStore;
             return this;
@@ -213,6 +229,19 @@ public abstract class AbstractSnapshotter implements Snapshotter {
         public Builder executor(Executor executor) {
             assertNonNull(executor, "Executor may not be null");
             this.executor = executor;
+            return this;
+        }
+
+        /**
+         * Sets the {@link SnapshotterSpanFactory} implementation to use for providing tracing capabilities. Defaults to a
+         * {@link DefaultSnapshotterSpanFactory} with a {@link NoOpSpanFactory} by default, which provides no tracing capabilities.
+         *
+         * @param spanFactory The {@link SpanFactory} implementation.
+         * @return The current Builder instance, for fluent interfacing.
+         */
+        public Builder spanFactory(@Nonnull SnapshotterSpanFactory spanFactory) {
+            assertNonNull(spanFactory, "SpanFactory may not be null");
+            this.builderSpanFactory = spanFactory;
             return this;
         }
 
@@ -259,8 +288,7 @@ public abstract class AbstractSnapshotter implements Snapshotter {
                 if (logger.isDebugEnabled()) {
                     logger.warn("An attempt to create and store a snapshot resulted in an exception:", e);
                 } else {
-                    logger.warn("An attempt to create and store a snapshot resulted in an exception. " +
-                                        "Exception summary: {}", e.getMessage());
+                    logger.warn("An attempt to create and store a snapshot resulted in an exception. Exception summary: {}", e.getMessage());
                 }
             }
         }
@@ -268,10 +296,10 @@ public abstract class AbstractSnapshotter implements Snapshotter {
         public Runnable andFinally(Runnable r) {
             return new RunnableAndFinally(this, r);
         }
-
     }
 
     private static class RunnableAndFinally implements Runnable {
+
         private final Runnable first;
 
         private final Runnable then;
@@ -289,7 +317,6 @@ public abstract class AbstractSnapshotter implements Snapshotter {
                 then.run();
             }
         }
-
     }
 
     private final class CreateSnapshotTask implements Runnable {

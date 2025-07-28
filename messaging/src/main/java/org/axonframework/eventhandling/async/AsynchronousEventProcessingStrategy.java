@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
 
 package org.axonframework.eventhandling.async;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.EventProcessingStrategy;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +46,7 @@ public class AsynchronousEventProcessingStrategy implements EventProcessingStrat
     private static final Logger logger = LoggerFactory.getLogger(AsynchronousEventProcessingStrategy.class);
     private final String scheduledEventsKey = this + "_SCHEDULED_EVENTS";
     private final Executor executor;
-    private final SequencingPolicy<? super EventMessage<?>> sequencingPolicy;
+    private final SequencingPolicy sequencingPolicy;
     private final ConcurrentMap<Object, EventProcessorTask> currentTasks = new ConcurrentHashMap<>();
 
     /**
@@ -57,15 +58,16 @@ public class AsynchronousEventProcessingStrategy implements EventProcessingStrat
      * @param sequencingPolicy the policy that determines if an event may be processed in sequence or in parallel
      */
     public AsynchronousEventProcessingStrategy(Executor executor,
-                                               SequencingPolicy<? super EventMessage<?>> sequencingPolicy) {
+                                               SequencingPolicy sequencingPolicy) {
         this.executor = requireNonNull(executor);
         this.sequencingPolicy = requireNonNull(sequencingPolicy);
     }
 
     @Override
-    public void handle(List<? extends EventMessage<?>> events, Consumer<List<? extends EventMessage<?>>> processor) {
+    public void handle(@Nonnull List<? extends EventMessage<?>> events,
+                       @Nonnull Consumer<List<? extends EventMessage<?>>> processor) {
         if (CurrentUnitOfWork.isStarted()) {
-            UnitOfWork<?> unitOfWorkRoot = CurrentUnitOfWork.get().root();
+            LegacyUnitOfWork<?> unitOfWorkRoot = CurrentUnitOfWork.get().root();
             unitOfWorkRoot.getOrComputeResource(scheduledEventsKey, key -> {
                 List<EventMessage<?>> allEvents = new ArrayList<>();
                 unitOfWorkRoot.afterCommit(uow -> schedule(allEvents, processor));
@@ -86,8 +88,10 @@ public class AsynchronousEventProcessingStrategy implements EventProcessingStrat
                             Consumer<List<? extends EventMessage<?>>> processor) {
         Map<Object, List<EventMessage<?>>> groupedEvents = new HashMap<>();
         for (EventMessage<?> event : events) {
-            groupedEvents.computeIfAbsent(sequencingPolicy.getSequenceIdentifierFor(event), key -> new ArrayList<>())
-                    .add(event);
+            groupedEvents.computeIfAbsent(
+                    sequencingPolicy.getSequenceIdentifierFor(event).orElse(null),
+                    key -> new ArrayList<>()
+            ).add(event);
         }
         groupedEvents.forEach((sequenceIdentifier, eventGroup) -> {
             if (sequenceIdentifier == null) {

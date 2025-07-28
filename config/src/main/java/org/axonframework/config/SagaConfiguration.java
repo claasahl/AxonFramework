@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,14 +65,6 @@ public interface SagaConfiguration<S> {
      * @return the Saga's {@link ListenerInvocationErrorHandler}
      */
     ListenerInvocationErrorHandler listenerInvocationErrorHandler();
-
-    /**
-     * Gets the {@link EventProcessor} responsible for delivering events to this Saga.
-     *
-     * @param <T> the type of the {@link EventProcessor}
-     * @return the {@link EventProcessor} for this Saga
-     */
-    <T extends EventProcessor> T eventProcessor();
 
     /**
      * Gets the Processing Group this Saga is assigned to.

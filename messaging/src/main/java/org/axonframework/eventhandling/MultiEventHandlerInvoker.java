@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,15 @@
 
 package org.axonframework.eventhandling;
 
+import jakarta.annotation.Nonnull;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Implementation of {@link EventHandlerInvoker} with capabilities to invoke several different invokers.
@@ -27,6 +32,7 @@ import java.util.List;
  * @author Milan Savic
  * @since 3.3
  */
+@Deprecated(since = "5.0.0", forRemoval = true)
 public class MultiEventHandlerInvoker implements EventHandlerInvoker {
 
     private final List<EventHandlerInvoker> delegates;
@@ -47,7 +53,7 @@ public class MultiEventHandlerInvoker implements EventHandlerInvoker {
      *
      * @param delegates which will be used to do the actual event handling
      */
-    public MultiEventHandlerInvoker(List<EventHandlerInvoker> delegates) {
+    public MultiEventHandlerInvoker(@Nonnull List<EventHandlerInvoker> delegates) {
         this.delegates = flatten(delegates);
     }
 
@@ -63,30 +69,31 @@ public class MultiEventHandlerInvoker implements EventHandlerInvoker {
         return flattened;
     }
 
+    @Nonnull
     public List<EventHandlerInvoker> delegates() {
         return Collections.unmodifiableList(delegates);
     }
 
     @Override
-    public boolean canHandle(EventMessage<?> eventMessage, Segment segment) {
-        return delegates.stream().anyMatch(i -> canHandle(i, eventMessage, segment));
+    public boolean canHandle(@Nonnull EventMessage<?> eventMessage, @Nonnull ProcessingContext context, @Nonnull Segment segment) {
+        return delegates.stream().anyMatch(i -> canHandle(i, eventMessage, context, segment));
     }
 
-    private boolean canHandle(EventHandlerInvoker invoker, EventMessage<?> eventMessage, Segment segment) {
+    private boolean canHandle(EventHandlerInvoker invoker, EventMessage<?> eventMessage, ProcessingContext context, Segment segment) {
         return (invoker.supportsReset() || !ReplayToken.isReplay(eventMessage))
-                && invoker.canHandle(eventMessage, segment);
+                && invoker.canHandle(eventMessage, context, segment);
     }
 
     @Override
-    public boolean canHandleType(Class<?> payloadType) {
+    public boolean canHandleType(@Nonnull Class<?> payloadType) {
         return delegates.stream().anyMatch(i -> i.canHandleType(payloadType));
     }
 
     @Override
-    public void handle(EventMessage<?> message, Segment segment) throws Exception {
+    public void handle(@Nonnull EventMessage<?> message, @Nonnull ProcessingContext context, @Nonnull Segment segment) throws Exception {
         for (EventHandlerInvoker i : delegates) {
-            if (canHandle(i, message, segment)) {
-                i.handle(message, segment);
+            if (canHandle(i, message, context, segment)) {
+                i.handle(message, context, segment);
             }
         }
     }
@@ -98,14 +105,21 @@ public class MultiEventHandlerInvoker implements EventHandlerInvoker {
     }
 
     @Override
-    public void performReset() {
-        performReset(null);
+    public void performReset(ProcessingContext context) {
+        performReset(null, context);
     }
 
     @Override
-    public <R> void performReset(R resetContext) {
+    public <R> void performReset(R resetContext, ProcessingContext processingContext) {
         delegates.stream()
                  .filter(EventHandlerInvoker::supportsReset)
-                 .forEach(eventHandlerInvoker -> eventHandlerInvoker.performReset(resetContext));
+                 .forEach(eventHandlerInvoker -> eventHandlerInvoker.performReset(resetContext, processingContext));
+    }
+
+    @Override
+    public Set<Class<?>> supportedEventTypes() {
+        return delegates.stream()
+                        .flatMap(invoker -> invoker.supportedEventTypes().stream())
+                        .collect(Collectors.toSet());
     }
 }

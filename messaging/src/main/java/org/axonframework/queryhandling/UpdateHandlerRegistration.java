@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,16 +30,21 @@ public class UpdateHandlerRegistration<U> {
 
     private final Registration registration;
     private final Flux<SubscriptionQueryUpdateMessage<U>> updates;
+    private final Runnable completeHandler;
 
     /**
      * Constructs a {@link UpdateHandlerRegistration} with given {@code registration} and {@code updates}.
      *
-     * @param registration used to cancel the registration
-     * @param updates      used to subscribe to updates stream
+     * @param registration    used to cancel the registration
+     * @param updates         used to subscribe to updates stream
+     * @param completeHandler handler invoked on {@link #complete()}
      */
-    public UpdateHandlerRegistration(Registration registration, Flux<SubscriptionQueryUpdateMessage<U>> updates) {
+    public UpdateHandlerRegistration(Registration registration,
+                                     Flux<SubscriptionQueryUpdateMessage<U>> updates,
+                                     Runnable completeHandler) {
         this.registration = registration;
         this.updates = updates;
+        this.completeHandler = completeHandler;
     }
 
     /**
@@ -58,5 +63,16 @@ public class UpdateHandlerRegistration<U> {
      */
     public Flux<SubscriptionQueryUpdateMessage<U>> getUpdates() {
         return updates;
+    }
+
+    /**
+     * Completes the {@link #getUpdates()} {@link Flux}. The consumer can use this method to indicate it is no longer
+     * interested in updates. This operation automatically closes the {@link #getRegistration() registration} too.
+     */
+    public void complete() {
+        completeHandler.run();
+        // In case a user didn't subscribe to the flux, the remove handler is never invoked.
+        // Hence, invoke removeHandler potentially twice to ensure the registration is removed from the emitter.
+        getRegistration().cancel();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class CollectionUtilsTest {
 
     @Test
-    void testCreateCollectionFromPotentialCollection() {
+    void createCollectionFromPotentialCollection() {
         Collection<String> collectionFromElement = CollectionUtils.asCollection("item");
         Collection<String> collectionFromNull = CollectionUtils.asCollection(null);
         Collection<String> collectionFromArray = CollectionUtils.asCollection(new String[]{"item1", "item2"});
@@ -45,7 +45,7 @@ class CollectionUtilsTest {
     }
 
     @Test
-    void testIntersect() {
+    void intersect() {
         TreeSet<Integer> result1 = CollectionUtils.intersect(asList(1, 2, 4, 5), asList(1, 3, 5, 7), TreeSet::new);
         TreeSet<Integer> result2 = CollectionUtils.intersect(emptyList(), asList(1, 3, 5, 7), TreeSet::new);
         List<Integer> result3 = CollectionUtils.intersect(singletonList(1), asList(1, 3, 5, 7), ArrayList::new);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,25 @@
 
 package org.axonframework.messaging.annotation;
 
-import org.axonframework.common.Assert;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import org.axonframework.common.Priority;
+import org.axonframework.messaging.Context.ResourceKey;
 import org.axonframework.messaging.InterceptorChain;
 import org.axonframework.messaging.Message;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.messaging.unitofwork.ResourceOverridingProcessingContext;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;
 import java.util.concurrent.Callable;
+import java.util.function.Function;
 
 /**
- * Parameter resolver factory that adds support for resolving current {@link InterceptorChain}. {@link
- * InterceptorChain}
- * can be initialized using static method {@link InterceptorChainParameterResolverFactory#initialize(InterceptorChain)}.
- * This can function only if there is an active {@link org.axonframework.messaging.unitofwork.UnitOfWork}.
+ * Parameter resolver factory that adds support for resolving current {@link InterceptorChain}. This can function only
+ * if there is an active {@link LegacyUnitOfWork}.
  *
  * @author Milan Savic
  * @since 3.3
@@ -39,36 +43,22 @@ import java.util.concurrent.Callable;
 public class InterceptorChainParameterResolverFactory
         implements ParameterResolverFactory, ParameterResolver<InterceptorChain> {
 
-    private static final String INTERCEPTOR_CHAIN_EMITTER_KEY = InterceptorChain.class.getName();
-
-    private static final ThreadLocal<InterceptorChain> CURRENT = new ThreadLocal<>();
-    /**
-     * Initializes current unit of work with interceptor chain.
-     *
-     * @param interceptorChain the interceptor chain
-     *
-     * @deprecated in favor of {@link #callWithInterceptorChain(InterceptorChain, Callable)}
-     */
-    @Deprecated
-    public static void initialize(InterceptorChain interceptorChain) {
-        Assert.state(CurrentUnitOfWork.isStarted(),
-                     () -> "An active Unit of Work is required for injecting interceptor chain");
-        CurrentUnitOfWork.get().resources().put(INTERCEPTOR_CHAIN_EMITTER_KEY, interceptorChain);
-    }
+    private static final ThreadLocal<InterceptorChain<?, ?>> CURRENT = new ThreadLocal<>();
+    private static final ResourceKey<InterceptorChain<?, ?>> INTERCEPTOR_CHAIN_KEY =
+            ResourceKey.withLabel("InterceptorChain");
 
     /**
-     * Invoke the given {@code action} with the given {@code interceptorChain} being available
-     * for parameter injection. Because this parameter is not bound to a message, it is important
-     * to invoke handlers using this method.
+     * Invoke the given {@code action} with the given {@code interceptorChain} being available for parameter injection.
+     * Because this parameter is not bound to a message, it is important to invoke handlers using this method.
      *
      * @param interceptorChain The InterceptorChain to consider for injection as parameter
      * @param action           The action to invoke
      * @param <R>              The type of response expected from the invocation
-     *
      * @return The response from the invocation of given {@code action}
      * @throws Exception any exception that occurs while invoking given {@code action}
      */
-    public static <R> R callWithInterceptorChain(InterceptorChain interceptorChain, Callable<R> action) throws Exception {
+    public static <R> R callWithInterceptorChainSync(InterceptorChain interceptorChain,
+                                                     Callable<R> action) throws Exception {
         InterceptorChain previous = CURRENT.get();
         CURRENT.set(interceptorChain);
         try {
@@ -83,34 +73,68 @@ public class InterceptorChainParameterResolverFactory
     }
 
     /**
-     * Returns the current interceptor chain registered for injection as a parameter. Will return
-     * the instance passed in {@link #callWithInterceptorChain(InterceptorChain, Callable)}. When invoked outside the
-     * scope of that method, this will return {@code null}.
+     * Invoke the given {@code action} with the given {@code interceptorChain} being available for parameter injection.
+     * Because this parameter is not bound to a message, it is important to invoke handlers using this method.
      *
-     * @return the InterceptorChain instance passed in {@link #callWithInterceptorChain(InterceptorChain, Callable)}
+     * @param interceptorChain The InterceptorChain to consider for injection as parameter
+     * @param action           The action to invoke
+     * @return The response from the invocation of given {@code action}
+     */
+    public static <M extends Message<?>, T extends Message<?>> MessageStream<T> callWithInterceptorChain(
+            ProcessingContext processingContext,
+            InterceptorChain<M, T> interceptorChain,
+            Function<ProcessingContext, MessageStream<T>> action
+    ) {
+        ProcessingContext newProcessingContext = new ResourceOverridingProcessingContext<>(processingContext,
+                                                                                           INTERCEPTOR_CHAIN_KEY,
+                                                                                           interceptorChain);
+        return action.apply(newProcessingContext);
+    }
+
+    /**
+     * Returns the current interceptor chain registered for injection as a parameter. Will return the instance passed in
+     * {@link #callWithInterceptorChainSync(InterceptorChain, Callable)}. When invoked outside the scope of that method,
+     * this will return {@code null}.
+     *
+     * @return the InterceptorChain instance passed in {@link #callWithInterceptorChainSync(InterceptorChain, Callable)}
      */
     public static InterceptorChain currentInterceptorChain() {
         return CURRENT.get();
     }
 
+    public static <M extends Message<?>, R extends Message<?>> InterceptorChain<M, R> currentInterceptorChain(
+            ProcessingContext processingContext
+    ) {
+        //noinspection unchecked
+        return (InterceptorChain<M, R>) processingContext.getResource(INTERCEPTOR_CHAIN_KEY);
+    }
+
+    @Nullable
     @Override
-    public InterceptorChain resolveParameterValue(Message<?> message) {
-        InterceptorChain interceptorChain = CURRENT.get();
+    public InterceptorChain resolveParameterValue(@Nonnull ProcessingContext context) {
+        InterceptorChain interceptorChain = context == null
+                ? null
+                : context.getResource(INTERCEPTOR_CHAIN_KEY);
+        if (interceptorChain == null) {
+            interceptorChain = CURRENT.get();
+        }
         if (interceptorChain != null) {
             return interceptorChain;
         }
-        return CurrentUnitOfWork.map(uow -> (InterceptorChain) uow.getResource(INTERCEPTOR_CHAIN_EMITTER_KEY))
-                                .orElseThrow(() -> new IllegalStateException(
-                                        "InterceptorChain should have been injected"));
+        throw new IllegalStateException("InterceptorChain should have been injected");
     }
 
     @Override
-    public boolean matches(Message<?> message) {
-        return CURRENT.get() != null || CurrentUnitOfWork.isStarted() && CurrentUnitOfWork.get().resources().containsKey(INTERCEPTOR_CHAIN_EMITTER_KEY);
+    public boolean matches(@Nonnull ProcessingContext context) {
+        return CURRENT.get() != null
+                || (context != null && context.containsResource(INTERCEPTOR_CHAIN_KEY));
     }
 
+    @Nullable
     @Override
-    public ParameterResolver<InterceptorChain> createInstance(Executable executable, Parameter[] parameters, int parameterIndex) {
+    public ParameterResolver<InterceptorChain> createInstance(@Nonnull Executable executable,
+                                                              @Nonnull Parameter[] parameters,
+                                                              int parameterIndex) {
         if (InterceptorChain.class.equals(parameters[parameterIndex].getType())) {
             return this;
         }

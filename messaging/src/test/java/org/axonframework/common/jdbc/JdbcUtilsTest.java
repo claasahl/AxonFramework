@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,93 +16,104 @@
 
 package org.axonframework.common.jdbc;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.*;
 
 import java.sql.ResultSet;
 
-import org.junit.jupiter.api.Test;
+import static org.axonframework.common.jdbc.JdbcUtils.nextAndExtract;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Tests the {@link JdbcUtils} class static methods
- * 
+ *
  * @author Albert Attard (Java Creed)
  * @see JdbcUtils
  */
 class JdbcUtilsTest {
 
     /**
-     * Tries to read from an empty result set. The method is expected to return
-     * {@code null}
-     * 
-     * @throws Exception
+     * Tries to read from an empty result set. The method is expected to return {@code null}
+     *
      * @see JdbcUtils#nextAndExtract(ResultSet, int, Class)
      * @see JdbcUtils#extract(ResultSet, int, Class)
      */
     @Test
-    void testNextAndExtract_EmptyResultSet() throws Exception {
+    void nextAndExtract_EmptyResultSet() throws Exception {
         ResultSet resultSet = mock(ResultSet.class);
 
         when(resultSet.next()).thenReturn(false);
-        assertNull(JdbcUtils.nextAndExtract(resultSet, 1, Long.class));
+        assertNull(nextAndExtract(resultSet, 1, Long.class));
     }
 
     /**
-     * Reads {@code null} from the result set. The result set here returns
-     * {@code null}.
-     * 
-     * @throws Exception
+     * Reads {@code null} from the result set. The result set here returns {@code null}.
+     *
      * @see JdbcUtils#nextAndExtract(ResultSet, int, Class)
      * @see JdbcUtils#extract(ResultSet, int, Class)
      */
     @Test
-    void testNextAndExtract_NullValue() throws Exception {
+    void nextAndExtract_NullValue() throws Exception {
         ResultSet resultSet = mock(ResultSet.class);
 
         when(resultSet.next()).thenReturn(true);
-        when(resultSet.getObject(eq(1), eq(Long.class))).thenReturn(null);
-        assertNull(JdbcUtils.nextAndExtract(resultSet, 1, Long.class));
+        when(resultSet.getObject(1, Long.class)).thenReturn(null);
+        assertNull(nextAndExtract(resultSet, 1, Long.class));
+    }
+
+    @Test
+    void nextAndExtractWithDefault_DefaultValue() throws Exception {
+        ResultSet resultSet = mock(ResultSet.class);
+        Long defaultValue = 42L;
+
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getObject(1, Long.class)).thenReturn(null);
+        assertEquals(defaultValue, nextAndExtract(resultSet, 1, Long.class, defaultValue));
     }
 
     /**
-     * Reads a value from the results set. The method should return the value that
-     * was read.
-     * 
-     * @throws Exception
+     * Reads a value from the results set. The method should return the value that was read.
+     *
      * @see JdbcUtils#nextAndExtract(ResultSet, int, Class)
      * @see JdbcUtils#extract(ResultSet, int, Class)
      */
     @Test
-    void testNextAndExtract_NonNullValue() throws Exception {
+    void nextAndExtract_NonNullValue() throws Exception {
         ResultSet resultSet = mock(ResultSet.class);
 
         when(resultSet.next()).thenReturn(true);
-        when(resultSet.getObject(eq(1), eq(Long.class))).thenReturn(10L);
-        assertEquals(Long.valueOf(10L), JdbcUtils.nextAndExtract(resultSet, 1, Long.class));
+        when(resultSet.getObject(1, Long.class)).thenReturn(10L);
+        assertEquals(Long.valueOf(10L), nextAndExtract(resultSet, 1, Long.class));
     }
 
     /**
-     * Reads a null value but the result set returns 0L while the wasNull() method
-     * returns false, which indicates that the value read from the result set was
-     * actually {@code null}.
-     * 
+     * Reads a null value but the result set returns 0L while the wasNull() method returns false, which indicates that
+     * the value read from the result set was actually {@code null}.
+     * <p>
      * This test was added to address issue
      * <a href="https://github.com/AxonFramework/AxonFramework/issues/636">#638</a>
-     * 
-     * @throws Exception
+     *
      * @see JdbcUtils#nextAndExtract(ResultSet, int, Class)
      * @see JdbcUtils#extract(ResultSet, int, Class)
      */
     @Test
-    void testNextAndExtract_NonNullValue_WasNull() throws Exception {
+    void nextAndExtract_NonNullValue_WasNull() throws Exception {
         ResultSet resultSet = mock(ResultSet.class);
 
         when(resultSet.next()).thenReturn(true);
-        when(resultSet.getObject(eq(1), eq(Long.class))).thenReturn(0L);
+        when(resultSet.getObject(1, Long.class)).thenReturn(0L);
         when(resultSet.wasNull()).thenReturn(true);
-        assertNull(JdbcUtils.nextAndExtract(resultSet, 1, Long.class));
+        assertNull(nextAndExtract(resultSet, 1, Long.class));
+    }
+
+    @Test
+    void nextAndExtractWithDefault_NonNullValue_WasDefault() throws Exception {
+        ResultSet resultSet = mock(ResultSet.class);
+        Long defaultValue = 42L;
+
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getObject(1, Long.class)).thenReturn(0L);
+        when(resultSet.wasNull()).thenReturn(true);
+        assertEquals(defaultValue, nextAndExtract(resultSet, 1, Long.class, defaultValue));
     }
 }

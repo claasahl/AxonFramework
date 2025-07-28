@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,14 @@
 package org.axonframework.deadline.annotation;
 
 import org.axonframework.deadline.DeadlineMessage;
+import org.axonframework.messaging.HandlerAttributes;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.WrappedMessageHandlingMember;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
-import java.util.Map;
+import jakarta.annotation.Nonnull;
 
 /**
  * Implementation of a {@link HandlerEnhancerDefinition} that is used for {@link DeadlineHandler} annotated methods.
@@ -34,28 +36,31 @@ import java.util.Map;
 public class DeadlineMethodMessageHandlerDefinition implements HandlerEnhancerDefinition {
 
     @Override
-    public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        return original.annotationAttributes(DeadlineHandler.class)
-                       .map(attr -> (MessageHandlingMember<T>) new DeadlineMethodMessageHandlingMember<>(original, attr))
+    public <T> MessageHandlingMember<T> wrapHandler(@Nonnull MessageHandlingMember<T> original) {
+        //noinspection rawtypes,unchecked
+        return original.<String>attribute(HandlerAttributes.DEADLINE_NAME)
+                       .map(deadlineName -> (MessageHandlingMember<T>) new DeadlineMethodMessageHandlingMember(
+                               original, deadlineName
+                       ))
                        .orElse(original);
     }
 
-    private static class DeadlineMethodMessageHandlingMember<T> extends WrappedMessageHandlingMember<T>
+    private static class DeadlineMethodMessageHandlingMember<T>
+            extends WrappedMessageHandlingMember<T>
             implements DeadlineHandlingMember<T> {
 
         private final String deadlineName;
 
-        private DeadlineMethodMessageHandlingMember(MessageHandlingMember<T> delegate,
-                                                    Map<String, Object> annotationAttributes) {
+        private DeadlineMethodMessageHandlingMember(MessageHandlingMember<T> delegate, String deadlineName) {
             super(delegate);
-            deadlineName = (String) annotationAttributes.get("deadlineName");
+            this.deadlineName = deadlineName;
         }
 
         @Override
-        public boolean canHandle(Message<?> message) {
+        public boolean canHandle(@Nonnull Message<?> message, @Nonnull ProcessingContext context) {
             return message instanceof DeadlineMessage
                     && deadlineNameMatch((DeadlineMessage<?>) message)
-                    && super.canHandle(message);
+                    && super.canHandle(message, context);
         }
 
         private boolean deadlineNameMatch(DeadlineMessage<?> message) {
@@ -63,7 +68,7 @@ public class DeadlineMethodMessageHandlerDefinition implements HandlerEnhancerDe
         }
 
         private boolean deadlineNameMatchesAll() {
-            return deadlineName.equals("");
+            return deadlineName.isEmpty();
         }
 
         @Override

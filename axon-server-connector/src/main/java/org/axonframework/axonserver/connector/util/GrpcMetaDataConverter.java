@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.axonframework.serialization.Serializer;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import static org.axonframework.common.ObjectUtils.getOrDefault;
 
@@ -108,7 +109,7 @@ public class GrpcMetaDataConverter {
             return MetaData.emptyInstance();
         }
 
-        Map<String, Object> metaData = new HashMap<>(metaDataMap.size());
+        Map<String, String> metaData = new HashMap<>(metaDataMap.size());
         metaDataMap.forEach((k, v) -> metaData.put(k, convertFromMetaDataValue(v)));
         return MetaData.from(metaData);
     }
@@ -121,21 +122,38 @@ public class GrpcMetaDataConverter {
      * @param value the {@link MetaDataValue} to convert to its Java representation
      * @return an {@link Object} representing the same value
      */
-    public Object convertFromMetaDataValue(MetaDataValue value) {
+    public String convertFromMetaDataValue(MetaDataValue value) {
         switch (value.getDataCase()) {
             case TEXT_VALUE:
                 return value.getTextValue();
             case BYTES_VALUE:
-                return serializer.deserialize(new GrpcSerializedObject(value.getBytesValue()));
+                return serializer.deserialize(new GrpcSerializedObject(value.getBytesValue())).toString();
             case DOUBLE_VALUE:
-                return value.getDoubleValue();
+                return Double.toString(value.getDoubleValue());
             case NUMBER_VALUE:
-                return value.getNumberValue();
+                return Long.toString(value.getNumberValue());
             case BOOLEAN_VALUE:
-                return value.getBooleanValue();
+                return Boolean.toString(value.getBooleanValue());
             case DATA_NOT_SET:
             default:
                 return null;
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof GrpcMetaDataConverter)) {
+            return false;
+        }
+        GrpcMetaDataConverter that = (GrpcMetaDataConverter) o;
+        return serializer.equals(that.serializer);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(serializer);
     }
 }

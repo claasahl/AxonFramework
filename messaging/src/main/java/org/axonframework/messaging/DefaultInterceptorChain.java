@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@
 
 package org.axonframework.messaging;
 
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import jakarta.annotation.Nonnull;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 
 import java.util.Iterator;
 
@@ -27,11 +29,12 @@ import java.util.Iterator;
  * @author Allard Buijze
  * @since 0.5
  */
-public class DefaultInterceptorChain<T extends Message<?>> implements InterceptorChain {
+@Deprecated
+public class DefaultInterceptorChain<T extends Message<?>, R extends Message<?>> implements InterceptorChain<T, R> {
 
-    private final MessageHandler<? super T> handler;
+    private final MessageHandler<? super T, R> handler;
     private final Iterator<? extends MessageHandlerInterceptor<? super T>> chain;
-    private final UnitOfWork<? extends T> unitOfWork;
+    private final LegacyUnitOfWork<? extends T> unitOfWork;
 
     /**
      * Initialize the default interceptor chain to dispatch the given {@code message}, through the
@@ -41,20 +44,29 @@ public class DefaultInterceptorChain<T extends Message<?>> implements Intercepto
      * @param interceptors  The interceptors composing the chain
      * @param handler       The handler for the message
      */
-    public DefaultInterceptorChain(UnitOfWork<? extends T> unitOfWork,
+    public DefaultInterceptorChain(LegacyUnitOfWork<? extends T> unitOfWork,
                                    Iterable<? extends MessageHandlerInterceptor<? super T>> interceptors,
-                                   MessageHandler<? super T> handler) {
+                                   MessageHandler<? super T, R> handler) {
         this.handler = handler;
         this.chain = interceptors.iterator();
         this.unitOfWork = unitOfWork;
     }
 
     @Override
-    public Object proceed() throws Exception {
+    public Object proceedSync(@Nonnull ProcessingContext context) throws Exception {
         if (chain.hasNext()) {
-            return chain.next().handle(unitOfWork, this);
+            return chain.next().handle(unitOfWork, context, this);
         } else {
-            return handler.handle(unitOfWork.getMessage());
+            return handler.handleSync(unitOfWork.getMessage(), context);
+        }
+    }
+
+    @Override
+    public MessageStream<R> proceed(@Nonnull T message, @Nonnull ProcessingContext context) {
+        if (chain.hasNext()) {
+            return chain.next().interceptOnHandle(message, context, this);
+        } else {
+            return handler.handle(message, context);
         }
     }
 }

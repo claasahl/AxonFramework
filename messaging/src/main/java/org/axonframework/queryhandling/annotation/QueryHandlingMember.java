@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.lang.reflect.Type;
  *
  * @param <T> The type of entity to which the message handler will delegate the actual handling of the message
  * @author Allard Buijze
+ * @since 3.1
  */
 public interface QueryHandlingMember<T> extends MessageHandlingMember<T> {
 

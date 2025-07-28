@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,12 +40,12 @@ class StubAggregateLifecycleTest {
     }
 
     @Test
-    void testLifecycleIsNotRegisteredAutomatically() {
+    void lifecycleIsNotRegisteredAutomatically() {
         assertThrows(IllegalStateException.class, () -> apply("test"));
     }
 
     @Test
-    void testApplyingEventsAfterDeactivationFails() {
+    void applyingEventsAfterDeactivationFails() {
         testSubject.activate();
         testSubject.close();
 
@@ -53,7 +53,7 @@ class StubAggregateLifecycleTest {
     }
 
     @Test
-    void testAppliedEventsArePassedToActiveLifecycle() {
+    void appliedEventsArePassedToActiveLifecycle() {
         testSubject.activate();
         apply("test");
 
@@ -63,7 +63,7 @@ class StubAggregateLifecycleTest {
     }
 
     @Test
-    void testMarkDeletedIsRegisteredWithActiveLifecycle() {
+    void markDeletedIsRegisteredWithActiveLifecycle() {
         testSubject.activate();
         markDeleted();
 

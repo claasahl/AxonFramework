@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ public abstract class AbstractResourceInjector implements ResourceInjector {
 
     private static final String[] DEFAULT_INJECT_ANNOTATIONS = {
             "javax.inject.Inject",
+            "jakarta.inject.Inject",
             "org.springframework.beans.factory.annotation.Autowired"
     };
 
@@ -71,6 +72,7 @@ public abstract class AbstractResourceInjector implements ResourceInjector {
      */
     protected abstract <R> Optional<R> findResource(Class<R> requiredType);
 
+    @SuppressWarnings("deprecation") // Suppressed ReflectionUtils#ensureAccessible
     private void injectFieldResource(Object saga, Field injectField, Object resource) {
         try {
             ReflectionUtils.ensureAccessible(injectField);
@@ -90,6 +92,7 @@ public abstract class AbstractResourceInjector implements ResourceInjector {
                                 }));
     }
 
+    @SuppressWarnings("deprecation") // Suppressed ReflectionUtils#ensureAccessible
     private void injectMethodResource(Object saga, Method injectMethod, Object resource) {
         try {
             ReflectionUtils.ensureAccessible(injectMethod);

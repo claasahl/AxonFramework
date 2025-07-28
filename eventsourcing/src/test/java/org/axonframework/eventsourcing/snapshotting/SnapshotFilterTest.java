@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ package org.axonframework.eventsourcing.snapshotting;
 import org.axonframework.eventhandling.DomainEventData;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventsourcing.eventstore.jpa.SnapshotEventEntry;
-import org.axonframework.serialization.xml.XStreamSerializer;
+import org.axonframework.eventsourcing.utils.TestSerializer;
+import org.axonframework.messaging.MessageType;
 import org.junit.jupiter.api.*;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,13 +37,12 @@ class SnapshotFilterTest {
 
     private static final DomainEventData<?> NO_SNAPSHOT_DATA = null;
     private static final DomainEventData<?> MOCK_SNAPSHOT_DATA = mock(DomainEventData.class);
-    private static final SnapshotEventEntry TEST_SNAPSHOT_DATA = new SnapshotEventEntry(
-            new GenericDomainEventMessage<>("some-type", "some-aggregate-id", 0, "some-payload"),
-            XStreamSerializer.defaultSerializer()
-    );
+    private static final SnapshotEventEntry TEST_SNAPSHOT_DATA = new SnapshotEventEntry(new GenericDomainEventMessage<>(
+            "some-type", "some-aggregate-id", 0, new MessageType("snapshot"), "some-payload"
+    ), TestSerializer.xStreamSerializer());
 
     @Test
-    void testAllowAllReturnsTrue() {
+    void allowAllReturnsTrue() {
         SnapshotFilter testSubject = SnapshotFilter.allowAll();
 
         assertTrue(testSubject.allow(NO_SNAPSHOT_DATA));
@@ -51,7 +51,7 @@ class SnapshotFilterTest {
     }
 
     @Test
-    void testRejectAllReturnsFalseOnAnyInput() {
+    void rejectAllReturnsFalseOnAnyInput() {
         SnapshotFilter testSubject = SnapshotFilter.rejectAll();
 
         assertFalse(testSubject.allow(NO_SNAPSHOT_DATA));
@@ -60,7 +60,7 @@ class SnapshotFilterTest {
     }
 
     @Test
-    void testFilterInvokesBothFiltersOnTrueForFirstFilter() {
+    void filterInvokesBothFiltersOnTrueForFirstFilter() {
         AtomicBoolean invokedFirst = new AtomicBoolean(false);
         SnapshotFilter first = snapshotData -> {
             invokedFirst.set(true);
@@ -81,7 +81,7 @@ class SnapshotFilterTest {
     }
 
     @Test
-    void testFilterInvokesFirstFilterOnlyOnFalseForFirstFilter() {
+    void filterInvokesFirstFilterOnlyOnFalseForFirstFilter() {
         AtomicBoolean invokedFirst = new AtomicBoolean(false);
         SnapshotFilter first = snapshotData -> {
             invokedFirst.set(true);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,30 +16,34 @@
 
 package org.axonframework.eventhandling.async;
 
-import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
-import org.axonframework.messaging.MetaData;
-import org.junit.jupiter.api.Test;
+import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.MessageType;
+import org.junit.jupiter.api.*;
 
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
+ * Test class validating the {@link SequentialPerAggregatePolicy}.
+ *
  * @author Allard Buijze
  */
 class SequentialPerAggregatePolicyTest {
 
     @Test
-    void testSequentialIdentifier() {
+    void sequentialIdentifier() {
         // ok, pretty useless, but everything should be tested
         SequentialPerAggregatePolicy testSubject = new SequentialPerAggregatePolicy();
         String aggregateIdentifier = UUID.randomUUID().toString();
-        Object id1 = testSubject.getSequenceIdentifierFor(newStubDomainEvent(aggregateIdentifier));
-        Object id2 = testSubject.getSequenceIdentifierFor(newStubDomainEvent(aggregateIdentifier));
-        Object id3 = testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID().toString()));
-        Object id4 = testSubject.getSequenceIdentifierFor(new GenericEventMessage<>("bla"));
+        Object id1 = testSubject.getSequenceIdentifierFor(newStubDomainEvent(aggregateIdentifier)).orElse(null);
+        Object id2 = testSubject.getSequenceIdentifierFor(newStubDomainEvent(aggregateIdentifier)).orElse(null);
+        Object id3 = testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID().toString())).orElse(null);
+        Object id4 = testSubject.getSequenceIdentifierFor(new GenericEventMessage<>(
+                new MessageType("event"), "bla"
+        )).orElse(null);
 
         assertEquals(id1, id2);
         assertNotEquals(id1, id3);
@@ -47,8 +51,9 @@ class SequentialPerAggregatePolicyTest {
         assertNull(id4);
     }
 
-    private DomainEventMessage newStubDomainEvent(String aggregateIdentifier) {
-        return new GenericDomainEventMessage<>("type", aggregateIdentifier, (long) 0,
-                                                     new Object(), MetaData.emptyInstance());
+    private DomainEventMessage<Object> newStubDomainEvent(String aggregateIdentifier) {
+        return new GenericDomainEventMessage<>(
+                "aggregateType", aggregateIdentifier, 0L, new MessageType("event"), new Object()
+        );
     }
 }

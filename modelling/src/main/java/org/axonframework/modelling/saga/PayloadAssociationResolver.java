@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,9 @@ import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 
 import java.lang.reflect.Executable;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import jakarta.annotation.Nonnull;
 
 import static java.lang.String.format;
 
@@ -35,14 +36,14 @@ import static java.lang.String.format;
  */
 public class PayloadAssociationResolver implements AssociationResolver {
 
-    private Map<String, Property<?>> propertyMap = new HashMap<>();
+    private Map<String, Property<?>> propertyMap = new ConcurrentHashMap<>();
 
     /**
      * Validates that the association property name exists as checked with the payload type. This is done by attempting
      * to create a {@link Property}. It also caches the resulting {@link Property} instance.
      */
     @Override
-    public <T> void validate(String associationPropertyName, MessageHandlingMember<T> handler) {
+    public <T> void validate(@Nonnull String associationPropertyName, @Nonnull MessageHandlingMember<T> handler) {
         getProperty(associationPropertyName, handler);
     }
 
@@ -51,8 +52,8 @@ public class PayloadAssociationResolver implements AssociationResolver {
      */
     @Override
     @SuppressWarnings("unchecked")
-    public <T> Object resolve(String associationPropertyName, EventMessage<?> message,
-                              MessageHandlingMember<T> handler) {
+    public <T> Object resolve(@Nonnull String associationPropertyName, @Nonnull EventMessage<?> message,
+                              @Nonnull MessageHandlingMember<T> handler) {
         return getProperty(associationPropertyName, handler).getValue(message.getPayload());
     }
 
@@ -62,17 +63,27 @@ public class PayloadAssociationResolver implements AssociationResolver {
     }
 
     private <T> Property createProperty(String associationPropertyName, MessageHandlingMember<T> handler) {
+        if (associationPropertyName.isEmpty()) {
+            throw new AxonConfigurationException(format(
+                    "SagaEventHandler %s does not define an association property",
+                    getHandlerName(handler)
+            ));
+        }
+
         Property<?> associationProperty = PropertyAccessStrategy.getProperty(handler.payloadType(),
                                                                              associationPropertyName);
         if (associationProperty == null) {
-            String handlerName = handler.unwrap(Executable.class).map(Executable::toGenericString).orElse("unknown");
             throw new AxonConfigurationException(format(
                     "SagaEventHandler %s defines a property %s that is not defined on the Event it declares to handle (%s)",
-                    handlerName,
+                    getHandlerName(handler),
                     associationPropertyName,
                     handler.payloadType().getName()
             ));
         }
         return associationProperty;
+    }
+
+    private String getHandlerName(MessageHandlingMember<?> handler) {
+        return handler.unwrap(Executable.class).map(Executable::toGenericString).orElse("unknown");
     }
 }

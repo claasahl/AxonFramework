@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@ package org.axonframework.eventhandling.scheduling;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
-import java.io.Serializable;
-
 /**
  * Token that identifies a single scheduled Event. This token can be used to refer to a specific scheduled event to
  * cancel that timer.
@@ -27,7 +25,7 @@ import java.io.Serializable;
  * @author Allard Buijze
  * @since 0.7
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, include = JsonTypeInfo.As.PROPERTY, property = "@class")
-public interface ScheduleToken extends Serializable {
+@JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@class")
+public interface ScheduleToken {
 
 }

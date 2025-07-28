@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,51 +16,53 @@
 
 package org.axonframework.serialization.xml;
 
+import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.converters.reflection.AbstractReflectionConverter;
 import org.axonframework.serialization.Revision;
 import org.axonframework.serialization.SerializedObject;
 import org.axonframework.serialization.SerializedType;
 import org.axonframework.serialization.SimpleSerializedObject;
+import org.axonframework.serialization.UnknownSerializedType;
 import org.axonframework.utils.StubDomainEvent;
 import org.dom4j.Document;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
+import org.mockito.*;
 
-import java.io.Serializable;
-import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
 import java.util.List;
+import java.util.Objects;
 
 import static java.util.Collections.singletonList;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
+ * Test class validating the {@link XStreamSerializer}.
+ *
  * @author Allard Buijze
  */
 class XStreamSerializerTest {
 
-    private XStreamSerializer testSubject;
     private static final String SPECIAL__CHAR__STRING = "Special chars: '\"&;\n\\<>/\n\t";
     private static final String REGULAR_STRING = "Henk";
+
     private TestEvent testEvent;
+
+    private XStreamSerializer testSubject;
 
     @BeforeEach
     void setUp() {
-        this.testSubject = XStreamSerializer.builder().build();
+        this.testSubject = XStreamSerializer.builder()
+                                            .xStream(new XStream())
+                                            .build();
         this.testEvent = new TestEvent(REGULAR_STRING);
     }
 
     @Test
-    void testSerializeAndDeserializeDomainEvent() {
+    void serializeAndDeserializeDomainEvent() {
         SerializedObject<byte[]> serializedEvent = testSubject.serialize(testEvent, byte[].class);
         Object actualResult = testSubject.deserialize(serializedEvent);
         assertTrue(actualResult instanceof TestEvent);
@@ -69,27 +71,27 @@ class XStreamSerializerTest {
     }
 
     @Test
-    void testSerializeAndDeserializeDomainEvent_WithXomUpcasters() {
+    void serializeAndDeserializeDomainEvent_WithXomUpcasters() {
         SerializedObject<nu.xom.Document> serializedEvent = testSubject.serialize(testEvent, nu.xom.Document.class);
         Object actualResult = testSubject.deserialize(serializedEvent);
         assertEquals(testEvent, actualResult);
     }
 
     @Test
-    void testSerializeAndDeserializeDomainEvent_WithDom4JUpcasters() {
+    void serializeAndDeserializeDomainEvent_WithDom4JUpcasters() {
         SerializedObject<org.dom4j.Document> serializedEvent =
                 testSubject.serialize(testEvent, org.dom4j.Document.class);
         Object actualResult = testSubject.deserialize(serializedEvent);
         assertEquals(testEvent, actualResult);
     }
-    
+
     @Test
-    void testSerializeAndDeserializeArray() {
+    void serializeAndDeserializeArray() {
         TestEvent toSerialize = new TestEvent("first");
 
         SerializedObject<String> serialized = testSubject.serialize(new TestEvent[]{toSerialize}, String.class);
 
-        Class actualType = testSubject.classForType(serialized.getType());
+        Class<?> actualType = testSubject.classForType(serialized.getType());
         assertTrue(actualType.isArray());
         assertEquals(TestEvent.class, actualType.getComponentType());
         TestEvent[] actual = testSubject.deserialize(serialized);
@@ -98,8 +100,7 @@ class XStreamSerializerTest {
     }
 
     @Test
-    void testSerializeAndDeserializeList() {
-
+    void serializeAndDeserializeList() {
         TestEvent toSerialize = new TestEvent("first");
 
         SerializedObject<String> serialized = testSubject.serialize(singletonList(toSerialize), String.class);
@@ -110,14 +111,16 @@ class XStreamSerializerTest {
     }
 
     @Test
-    void testDeserializeEmptyBytes() {
+    void deserializeEmptyBytes() {
         assertEquals(Void.class, testSubject.classForType(SerializedType.emptyType()));
-        assertNull(testSubject.deserialize(new SimpleSerializedObject<>(new byte[0], byte[].class, SerializedType.emptyType())));
+        assertNull(testSubject.deserialize(new SimpleSerializedObject<>(
+                new byte[0], byte[].class, SerializedType.emptyType())
+        ));
     }
 
     @Test
-    void testPackageAlias() throws UnsupportedEncodingException {
-        testSubject.addPackageAlias("axoneh", "org.axonframework.utils");
+    void packageAlias() {
+        testSubject.addPackageAlias("axon-eh", "org.axonframework.utils");
         testSubject.addPackageAlias("axon", "org.axonframework");
 
         SerializedObject<byte[]> serialized = testSubject.serialize(new StubDomainEvent(), byte[].class);
@@ -125,11 +128,11 @@ class XStreamSerializerTest {
         assertFalse(asString.contains("org.axonframework.domain"), "Package name found in:" + asString);
         StubDomainEvent deserialized = testSubject.deserialize(serialized);
         assertEquals(StubDomainEvent.class, deserialized.getClass());
-        assertTrue(asString.contains("axoneh"));
+        assertTrue(asString.contains("axon-eh"));
     }
 
     @Test
-    void testDeserializeNullValue() {
+    void deserializeNullValue() {
         SerializedObject<byte[]> serializedNull = testSubject.serialize(null, byte[].class);
         assertEquals("empty", serializedNull.getType().getName());
         SimpleSerializedObject<byte[]> serializedNullString = new SimpleSerializedObject<>(
@@ -140,7 +143,7 @@ class XStreamSerializerTest {
     }
 
     @Test
-    void testAlias() throws UnsupportedEncodingException {
+    void alias() {
         testSubject.addAlias("stub", StubDomainEvent.class);
 
         SerializedObject<byte[]> serialized = testSubject.serialize(new StubDomainEvent(), byte[].class);
@@ -152,7 +155,7 @@ class XStreamSerializerTest {
     }
 
     @Test
-    void testFieldAlias() throws UnsupportedEncodingException {
+    void fieldAlias() {
         testSubject.addFieldAlias("relevantPeriod", TestEvent.class, "period");
 
         SerializedObject<byte[]> serialized = testSubject.serialize(testEvent, byte[].class);
@@ -164,7 +167,7 @@ class XStreamSerializerTest {
     }
 
     @Test
-    void testRevisionNumber() {
+    void revisionNumber() {
         SerializedObject<byte[]> serialized = testSubject.serialize(new RevisionSpecifiedEvent(), byte[].class);
         assertNotNull(serialized);
         assertEquals("2", serialized.getType().getRevision());
@@ -173,7 +176,7 @@ class XStreamSerializerTest {
 
     @SuppressWarnings("Duplicates")
     @Test
-    void testSerializedTypeUsesClassAlias() {
+    void serializedTypeUsesClassAlias() {
         testSubject.addAlias("rse", RevisionSpecifiedEvent.class);
         SerializedObject<byte[]> serialized = testSubject.serialize(new RevisionSpecifiedEvent(), byte[].class);
         assertNotNull(serialized);
@@ -186,14 +189,14 @@ class XStreamSerializerTest {
      * #150</a>.
      */
     @Test
-    void testSerializeWithSpecialCharacters_WithDom4JUpcasters() {
+    void serializeWithSpecialCharacters_WithDom4JUpcasters() {
         SerializedObject<byte[]> serialized = testSubject.serialize(new TestEvent(SPECIAL__CHAR__STRING), byte[].class);
         TestEvent deserialized = testSubject.deserialize(serialized);
         assertArrayEquals(SPECIAL__CHAR__STRING.getBytes(), deserialized.getName().getBytes());
     }
 
     @Test
-    void testSerializeNullValue() {
+    void serializeNullValue() {
         SerializedObject<byte[]> serialized = testSubject.serialize(null, byte[].class);
         String deserialized = testSubject.deserialize(serialized);
         assertNull(deserialized);
@@ -204,36 +207,102 @@ class XStreamSerializerTest {
      * #150</a>.
      */
     @Test
-    void testSerializeWithSpecialCharacters_WithoutUpcasters() {
+    void serializeWithSpecialCharacters_WithoutUpcasters() {
         SerializedObject<byte[]> serialized = testSubject.serialize(new TestEvent(SPECIAL__CHAR__STRING), byte[].class);
         TestEvent deserialized = testSubject.deserialize(serialized);
         assertEquals(SPECIAL__CHAR__STRING, deserialized.getName());
     }
 
     @Test
-    void testUnknownPropertiesAreIgnoredWhenConfiguringLenientDeserialization() {
+    void unknownPropertiesAreIgnoredWhenConfiguringLenientDeserialization() {
         testSubject = XStreamSerializer.builder()
+                                       .xStream(new XStream())
                                        .lenientDeserialization()
                                        .build();
+
         SerializedObject<Document> serialized = testSubject.serialize(testEvent, Document.class);
         Document data = serialized.getData();
         data.getRootElement().addElement("unknown").setText("Ignored");
 
-        TestEvent actual = testSubject.deserialize(new SimpleSerializedObject<>(data, Document.class, serialized.getType()));
+        TestEvent actual = testSubject.deserialize(new SimpleSerializedObject<>(
+                data, Document.class, serialized.getType())
+        );
+
         assertEquals(testEvent, actual);
     }
 
     @Test
-    void testUnknownPropertiesFailDeserializationByDefault() {
+    void unknownPropertiesFailDeserializationByDefault() {
         testSubject = XStreamSerializer.builder()
+                                       .xStream(new XStream())
                                        .build();
+
         SerializedObject<Document> serialized = testSubject.serialize(testEvent, Document.class);
         Document data = serialized.getData();
         data.getRootElement().addElement("unknown").setText("Ignored");
 
-        assertThrows(AbstractReflectionConverter.UnknownFieldException.class, () -> {
-            testSubject.deserialize(new SimpleSerializedObject<>(data, Document.class, serialized.getType()));
-        });
+        assertThrows(
+                AbstractReflectionConverter.UnknownFieldException.class,
+                () -> testSubject.deserialize(new SimpleSerializedObject<>(data, Document.class, serialized.getType()))
+        );
+    }
+
+    @Test
+    void disableAxonTypeSecurity() {
+        XStream xStream = mock(XStream.class);
+
+        XStreamSerializer.builder()
+                         .xStream(xStream)
+                         .disableAxonTypeSecurity()
+                         .build();
+
+        verify(xStream, times(0)).allowTypesByWildcard(new String[]{"org.axonframework.**"});
+
+        // Axon types are added as wildcards by default.
+        XStreamSerializer.builder()
+                         .xStream(xStream)
+                         .build();
+
+        verify(xStream).allowTypesByWildcard(new String[]{"org.axonframework.**"});
+    }
+
+    @Test
+    void readUnknownSerializedTypeCachesLookupResults() {
+        XStream spiedXStream = spy(new XStream());
+        testSubject = XStreamSerializer.builder()
+                                       .xStream(spiedXStream)
+                                       .build();
+        // Clear invocations during the construction of the serializer
+        Mockito.clearInvocations(spiedXStream);
+        SerializedObject<String> testObject =
+                new SimpleSerializedObject<>("<key>value</key>", String.class, "my.nonexistent.Class", null);
+
+        for (int i = 0; i < 10; i++) {
+            Class<?> actual = testSubject.classForType(testObject.getType());
+            assertEquals(UnknownSerializedType.class, actual);
+        }
+
+        verify(spiedXStream, times(1)).getMapper();
+    }
+
+    @Test
+    void readUnknownSerializedTypeWithCachingDisabled() {
+        XStream spiedXStream = spy(new XStream());
+        testSubject = XStreamSerializer.builder()
+                                       .xStream(spiedXStream)
+                                       .disableCachingOfUnknownClasses()
+                                       .build();
+        // Clear invocations during the construction of the serializer
+        Mockito.clearInvocations(spiedXStream);
+        SerializedObject<String> testObject =
+                new SimpleSerializedObject<>("<key>value</key>", String.class, "my.nonexistent.Class", null);
+
+        for (int i = 0; i < 10; i++) {
+            Class<?> actual = testSubject.classForType(testObject.getType());
+            assertEquals(UnknownSerializedType.class, actual);
+        }
+
+        verify(spiedXStream, times(10)).getMapper();
     }
 
     @Revision("2")
@@ -241,13 +310,12 @@ class XStreamSerializerTest {
 
     }
 
-    public static class TestEvent implements Serializable {
+    public static class TestEvent {
 
-        private static final long serialVersionUID = 1L;
-        private String name;
-        private LocalDate date;
-        private Instant dateTime;
-        private Period period;
+        private final String name;
+        private final LocalDate date;
+        private final Instant dateTime;
+        private final Period period;
 
         public TestEvent(String name) {
             this.name = name;
@@ -271,16 +339,16 @@ class XStreamSerializerTest {
 
             TestEvent testEvent = (TestEvent) o;
 
-            if (date != null ? !date.equals(testEvent.date) : testEvent.date != null) {
+            if (!Objects.equals(date, testEvent.date)) {
                 return false;
             }
-            if (dateTime != null ? !dateTime.equals(testEvent.dateTime) : testEvent.dateTime != null) {
+            if (!Objects.equals(dateTime, testEvent.dateTime)) {
                 return false;
             }
-            if (name != null ? !name.equals(testEvent.name) : testEvent.name != null) {
+            if (!Objects.equals(name, testEvent.name)) {
                 return false;
             }
-            return period != null ? period.equals(testEvent.period) : testEvent.period == null;
+            return Objects.equals(period, testEvent.period);
         }
 
         @Override

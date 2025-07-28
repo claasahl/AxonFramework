@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,21 @@
 
 package org.axonframework.messaging.annotation;
 
+import jakarta.annotation.Nonnull;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageStream;
 
-import java.lang.reflect.Executable;
+import java.lang.reflect.Method;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.axonframework.common.annotation.AnnotationUtils.findAnnotationAttributes;
 
 /**
- * The default HandlerDefinition implementation in Axon. It implements the rules of annotated handlers used
- * in all the different types of handlers in Axon.
+ * The default HandlerDefinition implementation in Axon. It implements the rules of annotated handlers used in all the
+ * different types of handlers in Axon.
  * <p>
  * For this implementation to recognize a handler method, it should be (meta)annotated with {@link MessageHandler}. It
  * is recommended to meta-annotated members, and preconfigure the expected {@code messageType}. For example, and event
@@ -36,19 +41,26 @@ import static org.axonframework.common.annotation.AnnotationUtils.findAnnotation
  * definition.
  *
  * @see HandlerEnhancerDefinition
- * @see org.axonframework.commandhandling.CommandHandler
- * @see org.axonframework.eventhandling.EventHandler
+ * @see CommandHandler
+ * @see EventHandler
  */
 public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefinition {
+
     @SuppressWarnings("unchecked")
     @Override
-    public <T> Optional<MessageHandlingMember<T>> createHandler(Class<T> declaringType, Executable executable,
-                                                                ParameterResolverFactory parameterResolverFactory) {
-        return findAnnotationAttributes(executable, MessageHandler.class)
-                .map(attr -> new AnnotatedMessageHandlingMember<>(
-                        executable,
-                        (Class<? extends Message>) attr.getOrDefault("messageType", Message.class),
-                        (Class<? extends Message>) attr.getOrDefault("payloadType", Object.class),
-                        parameterResolverFactory));
+    public <T> Optional<MessageHandlingMember<T>> createHandler(
+            @Nonnull Class<T> declaringType,
+            @Nonnull Method method,
+            @Nonnull ParameterResolverFactory parameterResolverFactory,
+            @Nonnull Function<Object, MessageStream<?>> returnTypeConverter
+    ) {
+        return findAnnotationAttributes(method, MessageHandler.class)
+                .map(attr -> new MethodInvokingMessageHandlingMember<>(
+                        method,
+                        (Class<? extends Message<?>>) attr.getOrDefault("messageType", Message.class),
+                        (Class<? extends Message<?>>) attr.getOrDefault("payloadType", Object.class),
+                        parameterResolverFactory,
+                        returnTypeConverter
+                ));
     }
 }

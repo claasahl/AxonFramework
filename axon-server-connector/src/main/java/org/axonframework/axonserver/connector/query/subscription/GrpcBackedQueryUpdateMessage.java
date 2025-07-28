@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@
 package org.axonframework.axonserver.connector.query.subscription;
 
 import io.axoniq.axonserver.grpc.query.QueryUpdate;
+import jakarta.annotation.Nonnull;
 import org.axonframework.axonserver.connector.ErrorCode;
 import org.axonframework.axonserver.connector.util.GrpcMetaData;
 import org.axonframework.axonserver.connector.util.GrpcSerializedObject;
 import org.axonframework.messaging.IllegalPayloadAccessException;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.queryhandling.SubscriptionQueryUpdateMessage;
 import org.axonframework.serialization.LazyDeserializingObject;
@@ -33,9 +35,9 @@ import java.util.function.Supplier;
 /**
  * Wrapper that allows clients to access a gRPC {@link QueryUpdate} as a {@link SubscriptionQueryUpdateMessage}.
  *
- * @param <U> a generic specifying the type of the updates contained in the {@link SubscriptionQueryUpdateMessage}
+ * @param <U> A generic specifying the type of the updates contained in the {@link SubscriptionQueryUpdateMessage}.
  * @author Sara Pellegrini
- * @since 4.0
+ * @since 4.0.0
  */
 class GrpcBackedQueryUpdateMessage<U> implements SubscriptionQueryUpdateMessage<U> {
 
@@ -43,14 +45,15 @@ class GrpcBackedQueryUpdateMessage<U> implements SubscriptionQueryUpdateMessage<
     private final LazyDeserializingObject<U> serializedPayload;
     private final Throwable exception;
     private final Supplier<MetaData> metaDataSupplier;
+    private final MessageType type;
 
     /**
-     * Instantiate a {@link GrpcBackedQueryUpdateMessage} with the given {@code queryUpdate}, using the provided {@code
-     * serializer} to be able to retrieve the payload and {@link MetaData} from it.
+     * Instantiate a {@link GrpcBackedQueryUpdateMessage} with the given {@code queryUpdate}, using the provided
+     * {@code serializer} to be able to retrieve the payload and {@link MetaData} from it.
      *
-     * @param queryUpdate a {@link QueryUpdate} which is being wrapped as a {@link SubscriptionQueryUpdateMessage}
-     * @param serializer  a {@link Serializer} used to deserialize the payload and {@link MetaData} from the given
-     *                    {@code queryUpdate}
+     * @param queryUpdate A {@link QueryUpdate} which is being wrapped as a {@link SubscriptionQueryUpdateMessage}.
+     * @param serializer  A {@link Serializer} used to deserialize the payload and {@link MetaData} from the given
+     *                    {@code queryUpdate}.
      */
     public GrpcBackedQueryUpdateMessage(QueryUpdate queryUpdate, Serializer serializer) {
         this.queryUpdate = queryUpdate;
@@ -65,21 +68,38 @@ class GrpcBackedQueryUpdateMessage<U> implements SubscriptionQueryUpdateMessage<
                            .convert(queryUpdate.getErrorMessage(), exceptionDetails)
                 : null;
         this.metaDataSupplier = new GrpcMetaData(queryUpdate.getMetaDataMap(), serializer);
+        if (serializedPayload != null) {
+            this.type = new MessageType(
+                    serializer.classForType(new GrpcSerializedObject(queryUpdate.getPayload()).getType())
+            );
+        } else {
+            this.type = new MessageType(
+                    queryUpdate.getErrorCode()
+            );
+        }
     }
 
     private GrpcBackedQueryUpdateMessage(QueryUpdate queryUpdate,
                                          LazyDeserializingObject<U> serializedPayload,
                                          Throwable exception,
-                                         Supplier<MetaData> metaDataSupplier) {
+                                         Supplier<MetaData> metaDataSupplier,
+                                         MessageType type) {
         this.queryUpdate = queryUpdate;
         this.serializedPayload = serializedPayload;
         this.exception = exception;
         this.metaDataSupplier = metaDataSupplier;
+        this.type = type;
     }
 
     @Override
     public String getIdentifier() {
         return queryUpdate.getMessageIdentifier();
+    }
+
+    @Nonnull
+    @Override
+    public MessageType type() {
+        return this.type;
     }
 
     @Override
@@ -115,12 +135,16 @@ class GrpcBackedQueryUpdateMessage<U> implements SubscriptionQueryUpdateMessage<
     }
 
     @Override
-    public GrpcBackedQueryUpdateMessage<U> withMetaData(Map<String, ?> metaData) {
-        return new GrpcBackedQueryUpdateMessage<>(queryUpdate, serializedPayload, exception, () -> MetaData.from(metaData));
+    public GrpcBackedQueryUpdateMessage<U> withMetaData(@Nonnull Map<String, String> metaData) {
+        return new GrpcBackedQueryUpdateMessage<>(queryUpdate,
+                                                  serializedPayload,
+                                                  exception,
+                                                  () -> MetaData.from(metaData),
+                                                  type);
     }
 
     @Override
-    public GrpcBackedQueryUpdateMessage<U> andMetaData(Map<String, ?> metaData) {
+    public GrpcBackedQueryUpdateMessage<U> andMetaData(@Nonnull Map<String, String> metaData) {
         return withMetaData(getMetaData().mergedWith(metaData));
     }
 }

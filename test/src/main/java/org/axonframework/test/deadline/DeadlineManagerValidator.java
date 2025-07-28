@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.axonframework.test.deadline;
 
 import org.axonframework.deadline.DeadlineMessage;
+import org.axonframework.messaging.Message;
 import org.axonframework.test.AxonAssertionError;
 import org.axonframework.test.matchers.FieldFilter;
 import org.hamcrest.Description;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 import static java.lang.String.format;
 import static org.axonframework.common.DateTimeUtils.formatInstant;
 import static org.axonframework.test.matchers.Matchers.*;
+import static org.hamcrest.Matchers.any;
 
 /**
  * Helps validation of deadline mechanism provided by {@link StubDeadlineManager}.
@@ -96,7 +98,8 @@ public class DeadlineManagerValidator {
         matcher.describeTo(expected);
         describe(scheduledDeadlines, actual);
         throw new AxonAssertionError(format(
-                "Did not find a deadline at the given deadline manager. \nExpected:\n<%s> at <%s>\nGot:%s\n",
+                "Did not find a deadline at the given deadline manager.\n"
+                        + "Expected <%s> at <%s>,\n but got <%s>.\n",
                 expected, scheduledTime, actual
         ));
     }
@@ -112,7 +115,7 @@ public class DeadlineManagerValidator {
                 Description unexpected = new StringDescription();
                 matcher.describeTo(unexpected);
                 throw new AxonAssertionError(format(
-                        "Unexpected matching deadline found at the given deadline manager. \nGot:%s\n",
+                        "Unexpected matching deadline found at the given deadline manager.\nGot <%s>.\n",
                         unexpected
                 ));
             }
@@ -120,40 +123,102 @@ public class DeadlineManagerValidator {
     }
 
     /**
-     * Asserts that deadlines have been met (which have passed in time) match the given {@code matcher}.
+     * Asserts that the triggered deadlines match the given {@code matcher}.
      *
-     * @param matcher The matcher that will validate the actual deadlines
+     * @param matcher the matcher that will validate the actual deadlines
      */
-    public void assertDeadlinesMetMatching(Matcher<? extends Iterable<?>> matcher) {
-        List<ScheduledDeadlineInfo> deadlinesMet = deadlineManager.getDeadlinesMet();
-        List<DeadlineMessage<?>> deadlineMessages = deadlinesMet.stream()
-                                                                .map(ScheduledDeadlineInfo::deadlineMessage)
-                                                                .collect(Collectors.toList());
+    public void assertTriggeredDeadlinesMatching(Matcher<? extends Iterable<?>> matcher) {
+        List<ScheduledDeadlineInfo> triggeredDeadlines = deadlineManager.getTriggeredDeadlines();
+        List<DeadlineMessage<?>> deadlineMessages = triggeredDeadlines.stream()
+                                                                      .map(ScheduledDeadlineInfo::deadlineMessage)
+                                                                      .collect(Collectors.toList());
         if (!matcher.matches(deadlineMessages)) {
             Description expected = new StringDescription();
             Description actual = new StringDescription();
             matcher.describeTo(expected);
-            describe(deadlinesMet, actual);
+            describe(triggeredDeadlines, actual);
             throw new AxonAssertionError(format(
-                    "Expected deadlines were not met at the given deadline manager. \nExpected:\n<%s>\nGot:%s\n",
+                    "Expected deadlines were not triggered at the given deadline manager.\n"
+                            + "Expected <%s>,\n but got <%s>.\n",
                     expected, actual
             ));
         }
     }
 
     /**
-     * Asserts that the given {@code expected} deadlines have been met (which have passed in time).
+     * Asserts that the given {@code expected} deadlines have been triggered.
      *
-     * @param expected The deadlines that must have been met
+     * @param expected the deadlines that must have been triggered
      */
-    public void assertDeadlinesMet(Object... expected) {
-        List<ScheduledDeadlineInfo> deadlinesMet = deadlineManager.getDeadlinesMet();
-        if (deadlinesMet.size() != expected.length) {
-            throw new AxonAssertionError(format("Got wrong number of deadlines met. Expected <%s>, got <%s>",
-                                                expected.length,
-                                                deadlinesMet.size()));
+    public void assertTriggeredDeadlines(Object... expected) {
+        assertNumberOfAndMatchTriggeredDeadlines(
+                expected.length,
+                payloadsMatching(exactSequenceOf(createEqualToMatchers(expected)))
+        );
+    }
+
+    /**
+     * Asserts that the given {@code expectedDeadlineNames} have been triggered. Matches the complete and exact sequence
+     * of the given names with the result of {@link StubDeadlineManager#getTriggeredDeadlines()}.
+     *
+     * @param expectedDeadlineNames the deadline names that must have been triggered
+     */
+    public void assertTriggeredDeadlinesWithName(String... expectedDeadlineNames) {
+        assertNumberOfAndMatchTriggeredDeadlines(
+                expectedDeadlineNames.length,
+                exactSequenceOf(createDeadlineNameMatchers(expectedDeadlineNames))
+        );
+    }
+
+    private Matcher<DeadlineMessage<?>>[] createDeadlineNameMatchers(String[] expectedDeadlineNames) {
+        List<Matcher<DeadlineMessage<?>>> matchers = new ArrayList<>(expectedDeadlineNames.length);
+        for (String deadlineName : expectedDeadlineNames) {
+            matchers.add(matches(deadlineMessage -> deadlineMessage.getDeadlineName().equals(deadlineName)));
         }
-        assertDeadlinesMetMatching(payloadsMatching(exactSequenceOf(createEqualToMatchers(expected))));
+        //noinspection unchecked
+        return matchers.toArray(new Matcher[0]);
+    }
+
+    /**
+     * Asserts that the given {@code expectedDeadlineTypes} have been triggered. Matches the complete and exact sequence
+     * of the given types with the result of {@link StubDeadlineManager#getTriggeredDeadlines()}.
+     *
+     * @param expectedDeadlineTypes the deadline types that must have been triggered
+     */
+    public void assertTriggeredDeadlinesOfType(Class<?>... expectedDeadlineTypes) {
+        assertNumberOfAndMatchTriggeredDeadlines(
+                expectedDeadlineTypes.length,
+                exactSequenceOf(createDeadlineTypeMatchers(expectedDeadlineTypes))
+        );
+    }
+
+    private Matcher<Message<?>>[] createDeadlineTypeMatchers(Class<?>[] expectedDeadlineTypes) {
+        List<Matcher<Message<?>>> matchers = new ArrayList<>(expectedDeadlineTypes.length);
+        for (Class<?> deadlineType : expectedDeadlineTypes) {
+            matchers.add(messageWithPayload(any(deadlineType)));
+        }
+        //noinspection unchecked
+        return matchers.toArray(new Matcher[0]);
+    }
+
+    /**
+     * Validate whether the number of {@link StubDeadlineManager#getTriggeredDeadlines()} matches the given {@code
+     * numberOfExpectedDeadlines}. If it does, invoke the given {@code deadlinesMatcher} with the set of triggered
+     * deadlines.
+     *
+     * @param numberOfExpectedDeadlines the number of expected deadlines to be triggered
+     * @param deadlinesMatcher          the matcher used to match the {@link StubDeadlineManager#getTriggeredDeadlines()}
+     */
+    private void assertNumberOfAndMatchTriggeredDeadlines(int numberOfExpectedDeadlines,
+                                                          Matcher<? extends Iterable<?>> deadlinesMatcher) {
+        List<ScheduledDeadlineInfo> triggeredDeadlines = deadlineManager.getTriggeredDeadlines();
+        if (triggeredDeadlines.size() != numberOfExpectedDeadlines) {
+            throw new AxonAssertionError(format(
+                    "Got wrong number of triggered deadlines.\nExpected <%s>,\n but got <%s>.",
+                    numberOfExpectedDeadlines, triggeredDeadlines.size()
+            ));
+        }
+        assertTriggeredDeadlinesMatching(deadlinesMatcher);
     }
 
     /**
@@ -162,7 +227,9 @@ public class DeadlineManagerValidator {
     public void assertNoScheduledDeadlines() {
         List<ScheduledDeadlineInfo> scheduledDeadlines = deadlineManager.getScheduledDeadlines();
         if (scheduledDeadlines != null && !scheduledDeadlines.isEmpty()) {
-            throw new AxonAssertionError("Expected no scheduled deadlines, got " + scheduledDeadlines.size());
+            throw new AxonAssertionError(
+                    "Expected no scheduled deadlines, but got " + scheduledDeadlines.size() + " deadlines."
+            );
         }
     }
 
@@ -183,7 +250,7 @@ public class DeadlineManagerValidator {
     private Matcher<Object>[] createEqualToMatchers(Object[] expected) {
         List<Matcher<?>> matchers = new ArrayList<>(expected.length);
         for (Object deadline : expected) {
-            matchers.add(equalTo(deadline, fieldFilter));
+            matchers.add(deepEquals(deadline, fieldFilter));
         }
         return matchers.toArray(new Matcher[0]);
     }

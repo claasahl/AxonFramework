@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2012. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,8 +18,8 @@ package org.axonframework.test.eventscheduler;
 
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.MessageType;
+import org.junit.jupiter.api.*;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,10 +27,11 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
+ * Test class validating the {@link StubEventScheduler}.
+ *
  * @author Allard Buijze
  */
 class StubEventSchedulerTest {
@@ -43,32 +44,32 @@ class StubEventSchedulerTest {
     }
 
     @Test
-    void testScheduleEvent() {
+    void scheduleEvent() {
         testSubject.schedule(Instant.now().plus(Duration.ofDays(1)), event(new MockEvent()));
         assertEquals(1, testSubject.getScheduledItems().size());
     }
 
     @Test
-    void testEventContainsTimestampOfScheduledTime() {
+    void eventContainsTimestampOfScheduledTime() {
         Instant triggerTime = Instant.now().plusSeconds(60);
         testSubject.schedule(triggerTime, "gone");
         List<EventMessage<?>> triggered = new ArrayList<>();
         testSubject.advanceTimeBy(Duration.ofMinutes(75), triggered::add);
 
         assertEquals(1, triggered.size());
-        assertEquals(triggerTime, triggered.get(0).getTimestamp());
+        assertEquals(triggerTime, triggered.getFirst().getTimestamp());
     }
 
     @Test
-    void testInitializeAtDateTimeAfterSchedulingEvent() {
+    void initializeAtDateTimeAfterSchedulingEvent() {
         testSubject.schedule(Instant.now().plus(Duration.ofDays(1)), event(new MockEvent()));
 
-        assertThrows(IllegalStateException.class, () ->
-                        testSubject.initializeAt(Instant.now().minus(10, ChronoUnit.MINUTES)));
+        assertThrows(IllegalStateException.class,
+                     () -> testSubject.initializeAt(Instant.now().minus(10, ChronoUnit.MINUTES)));
     }
 
     private EventMessage<MockEvent> event(MockEvent mockEvent) {
-        return new GenericEventMessage<>(mockEvent);
+        return new GenericEventMessage<>(new MessageType("event"), mockEvent);
     }
 
     private static class MockEvent {

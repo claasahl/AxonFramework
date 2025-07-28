@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,11 +16,10 @@
 
 package org.axonframework.modelling.command.inspection;
 
-import org.axonframework.commandhandling.CommandHandler;
-import org.axonframework.eventhandling.EventHandler;
-import org.axonframework.messaging.annotation.DefaultParameterResolverFactory;
+import jakarta.persistence.Id;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
-import org.axonframework.messaging.annotation.ParameterResolverFactory;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.modelling.command.CommandHandlerInterceptor;
 import org.junit.jupiter.api.*;
@@ -30,8 +29,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-
-import javax.persistence.Id;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.singleton;
@@ -47,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class AnnotatedPolymorphicAggregateMetaModelFactoryTest {
 
     @Test
-    void testPolymorphicHierarchy() throws NoSuchMethodException {
+    void polymorphicHierarchy() throws NoSuchMethodException {
         Executable aHandle = A.class.getMethod("handle", String.class);
         Executable bHandle = B.class.getMethod("handle", Boolean.class);
         Executable cHandle = C.class.getMethod("handle", Boolean.class);
@@ -89,14 +86,14 @@ class AnnotatedPolymorphicAggregateMetaModelFactoryTest {
     }
 
     @Test
-    void testUniqueAggregateIdentifierField() {
+    void uniqueAggregateIdentifierField() {
         assertThrows(AggregateModellingException.class,
                      () -> AnnotatedAggregateMetaModelFactory
                              .inspectAggregate(D.class, new HashSet<>(singleton(E.class))));
     }
 
     @Test
-    void testUniqueAggregateIdentifierFieldShouldIgnorePersistenceId() {
+    void uniqueAggregateIdentifierFieldShouldIgnorePersistenceId() {
         // should not throw an exception
         AnnotatedAggregateMetaModelFactory.inspectAggregate(D.class, new HashSet<>(singleton(F.class)));
     }

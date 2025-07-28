@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,21 @@
 
 package org.axonframework.messaging;
 
-import org.axonframework.eventhandling.EventMessage;
+import com.thoughtworks.xstream.XStream;
 import org.axonframework.eventhandling.DomainEventMessage;
+import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.serialization.FixedValueRevisionResolver;
 import org.axonframework.serialization.SerializedObject;
 import org.axonframework.serialization.Serializer;
+import org.axonframework.serialization.xml.CompactDriver;
 import org.axonframework.serialization.xml.XStreamSerializer;
 import org.junit.jupiter.api.*;
 
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
+import static org.axonframework.eventhandling.EventTestUtils.asEventMessage;
 import static org.axonframework.messaging.Headers.*;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -46,55 +48,56 @@ class HeadersTests {
     @BeforeEach
     void setUp() {
         serializer = XStreamSerializer.builder()
+                                      .xStream(new XStream(new CompactDriver()))
                                       .revisionResolver(new FixedValueRevisionResolver("stub-revision"))
                                       .build();
     }
 
     @Test
-    void testMessageIdText() {
+    void messageIdText() {
         assertThat(MESSAGE_ID, is("axon-message-id"));
     }
 
     @Test
-    void testMessageTypeText() {
+    void messageTypeText() {
         assertThat(MESSAGE_TYPE, is("axon-message-type"));
     }
 
     @Test
-    void testMessageRevisionText() {
+    void messageRevisionText() {
         assertThat(MESSAGE_REVISION, is("axon-message-revision"));
     }
 
     @Test
-    void testMessageTimeStampText() {
+    void messageTimeStampText() {
         assertThat(MESSAGE_TIMESTAMP, is("axon-message-timestamp"));
     }
 
     @Test
-    void testMessageAggregateIdText() {
+    void messageAggregateIdText() {
         assertThat(AGGREGATE_ID, is("axon-message-aggregate-id"));
     }
 
     @Test
-    void testMessageAggregateSeqText() {
+    void messageAggregateSeqText() {
         assertThat(AGGREGATE_SEQ, is("axon-message-aggregate-seq"));
     }
 
     @Test
-    void testMessageAggregateTypeText() {
+    void messageAggregateTypeText() {
         assertThat(AGGREGATE_TYPE, is("axon-message-aggregate-type"));
     }
 
     @Test
-    void testMessageMetadataText() {
+    void messageMetadataText() {
         assertThat(MESSAGE_METADATA, is("axon-metadata"));
     }
 
     @Test
-    void testGeneratingDefaultMessagingHeaders() {
+    void generatingDefaultMessagingHeaders() {
         EventMessage<Object> message = asEventMessage("foo");
         SerializedObject<byte[]> serializedObject = message.serializePayload(serializer, byte[].class);
-        Map<String, Object> expected = new HashMap<String, Object>() {{
+        Map<String, Object> expected = new HashMap<>() {{
             put(MESSAGE_ID, message.getIdentifier());
             put(MESSAGE_TYPE, serializedObject.getType().getName());
             put(MESSAGE_REVISION, serializedObject.getType().getRevision());
@@ -105,17 +108,17 @@ class HeadersTests {
     }
 
     @Test
-    void testGeneratingDefaultMessagingHeaders_InvalidSerializedObject() {
+    void generatingDefaultMessagingHeaders_InvalidSerializedObject() {
         EventMessage<Object> message = asEventMessage("foo");
         assertThrows(IllegalArgumentException.class, () -> defaultHeaders(message, null));
     }
 
     @Test
-    void testGeneratingDomainMessagingHeaders() {
+    void generatingDomainMessagingHeaders() {
         DomainEventMessage<String> message = domainMessage();
         SerializedObject<byte[]> serializedObject = message.serializePayload(serializer, byte[].class);
 
-        Map<String, Object> expected = new HashMap<String, Object>() {{
+        Map<String, Object> expected = new HashMap<>() {{
             put(MESSAGE_ID, message.getIdentifier());
             put(MESSAGE_TYPE, serializedObject.getType().getName());
             put(MESSAGE_REVISION, serializedObject.getType().getRevision());
@@ -129,6 +132,8 @@ class HeadersTests {
     }
 
     private GenericDomainEventMessage<String> domainMessage() {
-        return new GenericDomainEventMessage<>("Stub", "893612", 1L, "Payload");
+        return new GenericDomainEventMessage<>(
+                "Stub", "893612", 1L, new MessageType("event"), "Payload"
+        );
     }
 }

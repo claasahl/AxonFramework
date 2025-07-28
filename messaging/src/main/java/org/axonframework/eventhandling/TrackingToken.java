@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2024. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,10 @@
 
 package org.axonframework.eventhandling;
 
+import org.axonframework.messaging.Context;
+import org.axonframework.messaging.Context.ResourceKey;
+
+import java.util.Optional;
 import java.util.OptionalLong;
 
 /**
@@ -25,6 +29,34 @@ import java.util.OptionalLong;
  * @author Rene de Waele
  */
 public interface TrackingToken {
+
+    // TODO Discuss if we see away around having the ResourceKey here, assuming we want the add/from methods to reside here.
+    /**
+     * The {@link ResourceKey} used whenever a {@link Context} would contain a {@link TrackingToken}.
+     */
+    ResourceKey<TrackingToken> RESOURCE_KEY = ResourceKey.withLabel("trackingToken");
+
+    /**
+     * Adds the given {@code token} to the given {@code context} using the {@link #RESOURCE_KEY}.
+     *
+     * @param context The {@link Context} to add the given {@code token} to.
+     * @param token   The {@link TrackingToken} to add to the given {@code context} using the {@link #RESOURCE_KEY}.
+     */
+    static Context addToContext(Context context, TrackingToken token) {
+        return context.withResource(RESOURCE_KEY, token);
+    }
+
+    /**
+     * Returns an {@link Optional} of {@link TrackingToken}, returning the resource keyed under the
+     * {@link #RESOURCE_KEY} in the given {@code context}.
+     *
+     * @param context The {@link Context} to retrieve the {@link TrackingToken} from, if present.
+     * @return An {@link Optional} of {@link TrackingToken}, returning the resource keyed under the
+     * {@link #RESOURCE_KEY} in the given {@code context}.
+     */
+    static Optional<TrackingToken> fromContext(Context context) {
+        return Optional.ofNullable(context.getResource(RESOURCE_KEY));
+    }
 
     /**
      * Returns a token that represents the lower bound between this and the {@code other} token. Effectively, the
@@ -59,13 +91,12 @@ public interface TrackingToken {
     boolean covers(TrackingToken other);
 
     /**
-     * Return the estimated relative position this token represents.
-     * In case no estimation can be given an {@code OptionalLong.empty()} will be returned.
+     * Return the estimated relative position this token represents. In case no estimation can be given an
+     * {@code OptionalLong.empty()} will be returned.
      *
      * @return the estimated relative position of this token
      */
     default OptionalLong position() {
         return OptionalLong.empty();
     }
-
 }

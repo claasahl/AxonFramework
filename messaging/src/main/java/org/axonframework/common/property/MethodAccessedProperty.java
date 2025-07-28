@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ public class MethodAccessedProperty<T> implements Property<T> {
      * @param accessorMethod The method providing the property value
      * @param propertyName   The name of the property
      */
+    @SuppressWarnings("deprecation") // Suppressed ReflectionUtils#ensureAccessible
     public MethodAccessedProperty(Method accessorMethod, String propertyName) {
         property = propertyName;
         method = ensureAccessible(accessorMethod);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.axonframework.modelling.command.inspection;
 
-import org.axonframework.commandhandling.CommandMessageHandlingMember;
+import org.axonframework.commandhandling.annotation.CommandMessageHandlingMember;
 import org.axonframework.common.IdentifierValidator;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
@@ -29,6 +29,8 @@ import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlerInvocationException;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.unitofwork.LegacyMessageSupportingContext;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.axonframework.modelling.command.AggregateRoot;
 import org.axonframework.modelling.command.AggregateVersion;
 import org.axonframework.modelling.command.EntityId;
@@ -43,10 +45,12 @@ import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
@@ -62,8 +66,8 @@ import static org.axonframework.common.ReflectionUtils.NOT_RECURSIVE;
 import static org.axonframework.common.annotation.AnnotationUtils.findAnnotationAttributes;
 
 /**
- * AggregateMetaModelFactory implementation that uses annotations on the target aggregate's members to build up the meta
- * model of the aggregate.
+ * AggregateMetaModelFactory implementation that uses annotations on the target aggregate's members to build up the
+ * meta-model of the aggregate.
  *
  * @author Allard Buijze
  * @since 3.1
@@ -205,10 +209,10 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
 
     private class AnnotatedAggregateModel<T> implements AggregateModel<T> {
 
-        private static final String JAVAX_PERSISTENCE_ID = "javax.persistence.Id";
+        private static final String PERSISTENCE_ID = "jakarta.persistence.Id";
 
         private final Class<? extends T> inspectedType;
-        private final List<ChildEntity<T>> children;
+        private final Map<Class<?>, List<ChildEntity<T>>> children;
         private final AnnotatedHandlerInspector<T> handlerInspector;
         private final Map<Class<?>, List<MessageHandlingMember<? super T>>> allCommandHandlerInterceptors;
         private final Map<Class<?>, List<MessageHandlingMember<? super T>>> allCommandHandlers;
@@ -230,15 +234,15 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
             this.allCommandHandlerInterceptors = new HashMap<>();
             this.allCommandHandlers = new HashMap<>();
             this.allEventHandlers = new HashMap<>();
-            this.children = new ArrayList<>();
+            this.children = new HashMap<>();
             this.handlerInspector = handlerInspector;
         }
 
         private void initialize() {
             initializing.set(Boolean.TRUE);
             inspectFieldsAndMethods();
-            prepareHandlers();
             inspectAggregateTypes();
+            prepareHandlers();
             initialized = true;
             initializing.remove();
         }
@@ -251,8 +255,8 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
                     if (handler.unwrap(CommandMessageHandlingMember.class).isPresent()) {
                         if (Modifier.isAbstract(type.getModifiers()) && handler.unwrap(Constructor.class).isPresent()) {
                             throw new AggregateModellingException(format(
-                                    "An abstract aggregate %s cannot have @CommandHandler on constructor.",
-                                    type));
+                                    "An abstract aggregate %s cannot have @CommandHandler on constructor.", type
+                            ));
                         }
                         addHandler(allCommandHandlers, type, handler);
                     } else {
@@ -260,13 +264,40 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
                     }
                 }
             }
-            for (Map.Entry<Class<?>, SortedSet<MessageHandlingMember<? super T>>> interceptorsPerType : handlerInspector.getAllInterceptors().entrySet()) {
+
+            for (Map.Entry<Class<?>, SortedSet<MessageHandlingMember<? super T>>> interceptorsPerType
+                    : handlerInspector.getAllInterceptors().entrySet()) {
                 Class<?> type = interceptorsPerType.getKey();
                 for (MessageHandlingMember<? super T> handler : interceptorsPerType.getValue()) {
                     addHandler(allCommandHandlerInterceptors, type, handler);
                 }
             }
+            prepareChildEntityCommandHandlers();
             validateCommandHandlers();
+        }
+
+        /**
+         * For every discovered type of the aggregate hierarchy, check whether there are
+         * {@link ChildEntity ChildEntitys} present. If they are not present on the type's level, move to that class'
+         * superclass (if possible) and check whether it has any {@code ChildEntity} instances registered. If this is
+         * the case, add them to the {@link Class} type being validated. Doing so ensures that each level in the
+         * hierarchy knows of all it's entities' command handlers and its parent their entity command handlers.
+         */
+        private void prepareChildEntityCommandHandlers() {
+            for (Class<?> aggregateType : types.values()) {
+                Class<?> type = aggregateType;
+                List<ChildEntity<T>> childrenPerType = new ArrayList<>(children.getOrDefault(type, Collections.emptyList()));
+                while (!type.equals(Object.class) && type.getSuperclass() != null) {
+                    type = type.getSuperclass();
+                    childrenPerType.addAll(new ArrayList<>(children.getOrDefault(type, Collections.emptyList())));
+                }
+
+                for (ChildEntity<T> child : childrenPerType) {
+                    child.commandHandlers().forEach(
+                            childCommandHandler -> addHandler(allCommandHandlers, aggregateType, childCommandHandler)
+                    );
+                }
+            }
         }
 
         private void addHandler(Map<Class<?>, List<MessageHandlingMember<? super T>>> handlers, Class<?> type,
@@ -339,9 +370,9 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
             for (Class<?> handledType : handlerInspector.getAllInspectedTypes()) {
                 // Navigate fields for Axon related annotations
                 for (Field field : ReflectionUtils.fieldsOf(handledType, NOT_RECURSIVE)) {
-                    createChildDefinitionsAndAddHandlers(childEntityDefinitions, handledType, field);
+                    createChildDefinitions(childEntityDefinitions, handledType, field);
                     findAnnotationAttributes(field, EntityId.class).ifPresent(attributes -> entityIdMembers.add(field));
-                    findAnnotationAttributes(field, JAVAX_PERSISTENCE_ID).ifPresent(
+                    findAnnotationAttributes(field, PERSISTENCE_ID).ifPresent(
                             attributes -> persistenceIdMembers.add(field)
                     );
                     findAnnotationAttributes(field, AggregateVersion.class).ifPresent(
@@ -350,13 +381,13 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
                 }
                 // Navigate methods for Axon related annotations
                 for (Method method : ReflectionUtils.methodsOf(handledType, NOT_RECURSIVE)) {
-                    createChildDefinitionsAndAddHandlers(childEntityDefinitions, handledType, method);
+                    createChildDefinitions(childEntityDefinitions, handledType, method);
                     findAnnotationAttributes(method, EntityId.class).ifPresent(attributes -> {
                         assertValidValueProvidingMethod(method, EntityId.class.getSimpleName());
                         entityIdMembers.add(method);
                     });
-                    findAnnotationAttributes(method, JAVAX_PERSISTENCE_ID).ifPresent(attributes -> {
-                        assertValidValueProvidingMethod(method, JAVAX_PERSISTENCE_ID);
+                    findAnnotationAttributes(method, PERSISTENCE_ID).ifPresent(attributes -> {
+                        assertValidValueProvidingMethod(method, PERSISTENCE_ID);
                         persistenceIdMembers.add(method);
                     });
                     findAnnotationAttributes(method, AggregateVersion.class).ifPresent(attributes -> {
@@ -372,17 +403,15 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
             assertIdentifierValidity(identifierMember);
         }
 
-        private void createChildDefinitionsAndAddHandlers(ServiceLoader<ChildEntityDefinition> childEntityDefinitions,
-                                                          Class<?> type,
-                                                          Member entityMember) {
+        private void createChildDefinitions(ServiceLoader<ChildEntityDefinition> childEntityDefinitions,
+                                            Class<?> type,
+                                            Member entityMember) {
             childEntityDefinitions.forEach(
                     definition -> definition.createChildDefinition(entityMember, this)
-                                            .ifPresent(child -> {
-                                                children.add(child);
-                                                child.commandHandlers().forEach(
-                                                        handler -> addHandler(allCommandHandlers, type, handler)
-                                                );
-                                            })
+                                            .ifPresent(
+                                                    child -> children.computeIfAbsent(type, t -> new ArrayList<>())
+                                                                     .add(child)
+                                            )
             );
         }
 
@@ -534,14 +563,17 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
         private void doPublish(EventMessage<?> message, T target) {
             getHandler(message, target.getClass()).ifPresent(h -> {
                 try {
+                    ProcessingContext context = new LegacyMessageSupportingContext(message);
                     handlerInspector.chainedInterceptor(target.getClass())
-                                    .handle(message, target, h);
+                                    .handleSync(message, context, target, h);
                 } catch (Exception e) {
                     throw new MessageHandlerInvocationException(
                             format("Error handling event of type [%s] in aggregate", message.getPayloadType()), e);
                 }
             });
-            children.forEach(childEntity -> childEntity.publish(message, target));
+            children.values().stream()
+                    .flatMap(Collection::stream)
+                    .forEach(childEntity -> childEntity.publish(message, target));
         }
 
         @Override
@@ -584,7 +616,7 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
          */
         protected Optional<MessageHandlingMember<? super T>> getHandler(Message<?> message, Class<?> targetClass) {
             return handlers(allEventHandlers, targetClass)
-                    .filter(handler -> handler.canHandle(message))
+                    .filter(handler -> handler.canHandle(message, new LegacyMessageSupportingContext(message)))
                     .findFirst();
         }
 
@@ -593,12 +625,13 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
             return Collections.unmodifiableMap(allEventHandlers);
         }
 
-        //backwards compatibility - if you don't specify a designated child,
-        //you should at least get handlers of its first registered parent (if any)
+        // Backwards compatibility - if you don't specify a designated child,
+        //  you should at least get handlers of its first registered parent (if any).
         private Stream<MessageHandlingMember<? super T>> handlers(
-                Map<Class<?>, List<MessageHandlingMember<? super T>>> handlers, Class<?> subtype) {
+                Map<Class<?>, List<MessageHandlingMember<? super T>>> handlers, Class<?> subtype
+        ) {
             Class<?> type = subtype;
-            while (!handlers.containsKey(type) && !type.equals(Object.class)) {
+            while (!handlers.containsKey(type) && !Objects.equals(type, Object.class) && type.getSuperclass() != null) {
                 type = type.getSuperclass();
             }
             return handlers.getOrDefault(type, Collections.emptyList()).stream();
@@ -615,7 +648,7 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
         }
 
         /**
-         * Returns this instance when it it safe to read from. This is either if the current thread is already
+         * Returns this instance when it is safe to read from. This is either if the current thread is already
          * initializing this instance, or when the instance is fully initialized.
          *
          * @return this instance, as soon as it is safe for reading

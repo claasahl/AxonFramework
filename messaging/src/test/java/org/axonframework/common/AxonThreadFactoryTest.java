@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ class AxonThreadFactoryTest {
     private AxonThreadFactory testSubject;
 
     @Test
-    void testCreateWithThreadGroupByName() {
+    void createWithThreadGroupByName() {
         testSubject = new AxonThreadFactory("test");
         Thread t1 = testSubject.newThread(new NoOpRunnable());
         Thread t2 = testSubject.newThread(new NoOpRunnable());
@@ -42,7 +42,7 @@ class AxonThreadFactoryTest {
     }
 
     @Test
-    void testCreateWithThreadGroupByThreadGroupInstance() {
+    void createWithThreadGroupByThreadGroupInstance() {
         ThreadGroup threadGroup = new ThreadGroup("test");
         testSubject = new AxonThreadFactory(threadGroup);
         Thread t1 = testSubject.newThread(new NoOpRunnable());
@@ -55,7 +55,7 @@ class AxonThreadFactoryTest {
     }
 
     @Test
-    void testCreateWithPriority() {
+    void createWithPriority() {
         ThreadGroup threadGroup = new ThreadGroup("test");
         testSubject = new AxonThreadFactory(Thread.MAX_PRIORITY, threadGroup);
         Thread t1 = testSubject.newThread(new NoOpRunnable());
@@ -68,13 +68,13 @@ class AxonThreadFactoryTest {
     }
 
     @Test
-    void testRejectsTooHighPriority() {
+    void rejectsTooHighPriority() {
         assertThrows(IllegalArgumentException.class,
                 () -> new AxonThreadFactory(Thread.MAX_PRIORITY + 1, new ThreadGroup("")));
     }
 
     @Test
-    void testRejectsTooLowPriority() {
+    void rejectsTooLowPriority() {
         assertThrows(IllegalArgumentException.class,
                 () -> new AxonThreadFactory(Thread.MIN_PRIORITY - 1, new ThreadGroup("")));
     }

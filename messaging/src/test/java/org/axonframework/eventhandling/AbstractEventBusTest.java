@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,39 +17,43 @@
 package org.axonframework.eventhandling;
 
 import org.axonframework.common.Registration;
-import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageDispatchInterceptor;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.axonframework.monitoring.MessageMonitor;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
-import org.mockito.Mockito;
+import org.junit.jupiter.api.*;
+import org.mockito.*;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import jakarta.annotation.Nonnull;
 
 import static java.util.Collections.emptyList;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
+ * Test class validating the {@link AbstractEventBus}.
+ *
  * @author Rene de Waele
  */
 class AbstractEventBusTest {
 
-    private UnitOfWork<?> unitOfWork;
+    private static final MessageType TEST_EVENT_NAME = new MessageType("event");
+
+    private LegacyUnitOfWork<?> unitOfWork;
     private StubPublishingEventBus testSubject;
 
     @BeforeEach
     void setUp() {
-        (unitOfWork = spy(new DefaultUnitOfWork<>(null))).start();
+        (unitOfWork = spy(new LegacyDefaultUnitOfWork<>(null))).start();
         testSubject = spy(StubPublishingEventBus.builder().build());
     }
 
@@ -61,7 +65,7 @@ class AbstractEventBusTest {
     }
 
     @Test
-    void testConsumersRegisteredWithUnitOfWorkWhenFirstEventIsPublished() {
+    void consumersRegisteredWithUnitOfWorkWhenFirstEventIsPublished() {
         EventMessage<?> event = newEvent();
         testSubject.publish(event);
         verify(unitOfWork).onPrepareCommit(any());
@@ -74,13 +78,14 @@ class AbstractEventBusTest {
     }
 
     @Test
-    void testNoMoreConsumersRegisteredWithUnitOfWorkWhenSecondEventIsPublished() {
+    void noMoreConsumersRegisteredWithUnitOfWorkWhenSecondEventIsPublished() {
         EventMessage<?> event = newEvent();
         testSubject.publish(event);
         verify(unitOfWork).onPrepareCommit(any());
         verify(unitOfWork).onCommit(any());
         // the monitor callback is also registered
         verify(unitOfWork, times(2)).afterCommit(any());
+        //noinspection unchecked
         reset(unitOfWork);
 
         testSubject.publish(event);
@@ -95,7 +100,7 @@ class AbstractEventBusTest {
     }
 
     @Test
-    void testCommitOnUnitOfWork() {
+    void commitOnUnitOfWork() {
         EventMessage<?> event = newEvent();
         testSubject.publish(event);
         unitOfWork.commit();
@@ -103,7 +108,7 @@ class AbstractEventBusTest {
     }
 
     @Test
-    void testPublicationOrder() {
+    void publicationOrder() {
         EventMessage<?> eventA = newEvent(), eventB = newEvent();
         testSubject.publish(eventA);
         testSubject.publish(eventB);
@@ -112,7 +117,7 @@ class AbstractEventBusTest {
     }
 
     @Test
-    void testPublicationWithNestedUow() {
+    void publicationWithNestedUow() {
         testSubject.publish(numberedEvent(5));
         unitOfWork.commit();
         assertEquals(Arrays.asList(numberedEvent(5), numberedEvent(4), numberedEvent(3), numberedEvent(2),
@@ -128,9 +133,9 @@ class AbstractEventBusTest {
     }
 
     @Test
-    void testPublicationForbiddenDuringUowCommitPhase() {
+    void publicationForbiddenDuringUowCommitPhase() {
         StubPublishingEventBus.builder()
-                              .publicationPhase(UnitOfWork.Phase.COMMIT)
+                              .publicationPhase(LegacyUnitOfWork.Phase.COMMIT)
                               .startNewUowBeforePublishing(false)
                               .build()
                               .publish(numberedEvent(5));
@@ -139,36 +144,37 @@ class AbstractEventBusTest {
     }
 
     @Test
-    void testPublicationForbiddenDuringRootUowCommitPhase() {
-        testSubject = spy(StubPublishingEventBus.builder().publicationPhase(UnitOfWork.Phase.COMMIT).build());
+    void publicationForbiddenDuringRootUowCommitPhase() {
+        testSubject = spy(StubPublishingEventBus.builder().publicationPhase(LegacyUnitOfWork.Phase.COMMIT).build());
         testSubject.publish(numberedEvent(1));
 
         assertThrows(IllegalStateException.class, unitOfWork::commit);
     }
 
     @Test
-    void testMessageMonitorRecordsIngestionAndPublication_InUnitOfWork() {
+    void messageMonitorRecordsIngestionAndPublication_InUnitOfWork() {
+        //noinspection unchecked
         MessageMonitor<? super EventMessage<?>> mockMonitor = mock(MessageMonitor.class);
         MessageMonitor.MonitorCallback mockMonitorCallback = mock(MessageMonitor.MonitorCallback.class);
         when(mockMonitor.onMessageIngested(any())).thenReturn(mockMonitorCallback);
         testSubject = spy(StubPublishingEventBus.builder().messageMonitor(mockMonitor).build());
 
-        testSubject.publish(GenericEventMessage.asEventMessage("test1"), GenericEventMessage.asEventMessage("test2"));
+        testSubject.publish(EventTestUtils.asEventMessage("test1"), EventTestUtils.asEventMessage("test2"));
 
         verify(mockMonitor, times(2)).onMessageIngested(any());
         verify(mockMonitorCallback, never()).reportSuccess();
 
         unitOfWork.commit();
         verify(mockMonitorCallback, times(2)).reportSuccess();
-
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void testDispatchInterceptor() {
+    void dispatchInterceptor() {
+        //noinspection unchecked
         MessageDispatchInterceptor<EventMessage<?>> dispatchInterceptorMock = mock(MessageDispatchInterceptor.class);
         String key = "additional", value = "metaData";
         when(dispatchInterceptorMock.handle(anyList())).thenAnswer(invocation -> {
+            //noinspection unchecked
             List<EventMessage<?>> eventMessages = (List<EventMessage<?>>) invocation.getArguments()[0];
             return (BiFunction<Integer, Object, Object>) (index, message) -> {
                 if (eventMessages.get(index).getMetaData().containsKey(key)) {
@@ -179,21 +185,22 @@ class AbstractEventBusTest {
         });
         testSubject.registerDispatchInterceptor(dispatchInterceptorMock);
         testSubject.publish(newEvent(), newEvent());
-        verifyZeroInteractions(dispatchInterceptorMock);
+        verifyNoInteractions(dispatchInterceptorMock);
 
         unitOfWork.commit();
-        ArgumentCaptor<List> argumentCaptor = ArgumentCaptor.forClass(List.class);
+        //noinspection unchecked
+        ArgumentCaptor<List<EventMessage<?>>> argumentCaptor = ArgumentCaptor.forClass(List.class);
         verify(dispatchInterceptorMock).handle(argumentCaptor.capture()); //prepare commit, commit, and after commit
         assertEquals(1, argumentCaptor.getAllValues().size());
         assertEquals(2, argumentCaptor.getValue().size());
-        assertEquals(value, ((EventMessage<?>) argumentCaptor.getValue().get(0)).getMetaData().get(key));
+        assertEquals(value, argumentCaptor.getValue().get(0).getMetaData().get(key));
     }
 
-    private static EventMessage newEvent() {
-        return new GenericEventMessage<>(new Object());
+    private static EventMessage<Object> newEvent() {
+        return new GenericEventMessage<>(TEST_EVENT_NAME, new Object());
     }
 
-    private static EventMessage numberedEvent(final int number) {
+    private static EventMessage<Integer> numberedEvent(final int number) {
         return new StubNumberedEvent(number);
     }
 
@@ -201,7 +208,7 @@ class AbstractEventBusTest {
 
         private final List<EventMessage<?>> committedEvents = new ArrayList<>();
 
-        private final UnitOfWork.Phase publicationPhase;
+        private final LegacyUnitOfWork.Phase publicationPhase;
         private final boolean startNewUowBeforePublishing;
 
         private StubPublishingEventBus(Builder builder) {
@@ -216,21 +223,21 @@ class AbstractEventBusTest {
 
         @Override
         protected void prepareCommit(List<? extends EventMessage<?>> events) {
-            if (publicationPhase == UnitOfWork.Phase.PREPARE_COMMIT) {
+            if (publicationPhase == LegacyUnitOfWork.Phase.PREPARE_COMMIT) {
                 onEvents(events);
             }
         }
 
         @Override
         protected void commit(List<? extends EventMessage<?>> events) {
-            if (publicationPhase == UnitOfWork.Phase.COMMIT) {
+            if (publicationPhase == LegacyUnitOfWork.Phase.COMMIT) {
                 onEvents(events);
             }
         }
 
         @Override
         protected void afterCommit(List<? extends EventMessage<?>> events) {
-            if (publicationPhase == UnitOfWork.Phase.AFTER_COMMIT) {
+            if (publicationPhase == LegacyUnitOfWork.Phase.AFTER_COMMIT) {
                 onEvents(events);
             }
         }
@@ -241,9 +248,9 @@ class AbstractEventBusTest {
             if (payload instanceof Integer) {
                 int number = (int) payload;
                 if (number > 0) {
-                    EventMessage nextEvent = numberedEvent(number - 1);
+                    EventMessage<Integer> nextEvent = numberedEvent(number - 1);
                     if (startNewUowBeforePublishing) {
-                        UnitOfWork<?> nestedUnitOfWork = DefaultUnitOfWork.startAndGet(null);
+                        LegacyUnitOfWork<?> nestedUnitOfWork = LegacyDefaultUnitOfWork.startAndGet(null);
                         try {
                             publish(nextEvent);
                         } finally {
@@ -258,26 +265,28 @@ class AbstractEventBusTest {
         }
 
         @Override
-        public Registration subscribe(Consumer<List<? extends EventMessage<?>>> eventProcessor) {
+        public Registration subscribe(@Nonnull Consumer<List<? extends EventMessage<?>>> eventProcessor) {
             throw new UnsupportedOperationException();
         }
 
         private static class Builder extends AbstractEventBus.Builder {
 
-            private UnitOfWork.Phase publicationPhase = UnitOfWork.Phase.PREPARE_COMMIT;
+            private LegacyUnitOfWork.Phase publicationPhase = LegacyUnitOfWork.Phase.PREPARE_COMMIT;
             private boolean startNewUowBeforePublishing = true;
 
-            private Builder publicationPhase(UnitOfWork.Phase publicationPhase) {
+            @SuppressWarnings("SameParameterValue")
+            private Builder publicationPhase(LegacyUnitOfWork.Phase publicationPhase) {
                 this.publicationPhase = publicationPhase;
                 return this;
             }
 
             @Override
-            public Builder messageMonitor(MessageMonitor<? super EventMessage<?>> messageMonitor) {
+            public Builder messageMonitor(@Nonnull MessageMonitor<? super EventMessage<?>> messageMonitor) {
                 super.messageMonitor(messageMonitor);
                 return this;
             }
 
+            @SuppressWarnings("SameParameterValue")
             private Builder startNewUowBeforePublishing(boolean startNewUowBeforePublishing) {
                 this.startNewUowBeforePublishing = startNewUowBeforePublishing;
                 return this;
@@ -291,8 +300,10 @@ class AbstractEventBusTest {
 
     private static class StubNumberedEvent extends GenericEventMessage<Integer> {
 
+        private static final MessageType TYPE = new MessageType("StubNumberedEvent");
+
         StubNumberedEvent(Integer payload) {
-            super(payload);
+            super(TYPE, payload);
         }
 
         @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.command.inspection;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.NoHandlerForCommandException;
 import org.axonframework.common.Assert;
@@ -27,16 +28,19 @@ import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.DefaultInterceptorChain;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.axonframework.modelling.command.Aggregate;
 import org.axonframework.modelling.command.AggregateInvocationException;
 import org.axonframework.modelling.command.AggregateLifecycle;
 import org.axonframework.modelling.command.ApplyMore;
-import org.axonframework.modelling.command.Repository;
+import org.axonframework.modelling.command.LegacyRepository;
 import org.axonframework.modelling.command.RepositoryProvider;
+import org.axonframework.modelling.entity.ChildEntityNotFoundException;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -59,12 +63,14 @@ import static java.lang.String.format;
  * methods.
  *
  * @param <T> The type of the aggregate root object
+ * @author Allard Buijze
  * @see AggregateLifecycle#apply(Object)
  * @see AggregateLifecycle#markDeleted()
+ * @since 3.0
  */
 public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggregate<T>, ApplyMore {
 
-    private final AggregateModel<T> inspector;
+    protected final AggregateModel<T> inspector;
     private final RepositoryProvider repositoryProvider;
     private final Queue<Runnable> delayedTasks = new LinkedList<>();
     private final EventBus eventBus;
@@ -139,12 +145,11 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
      * @param eventBus         The EventBus to publish events on
      * @param <T>              The type of the Aggregate root
      * @return An Aggregate instance, fully initialized
-     *
      * @throws Exception when an error occurs creating the aggregate root instance
      */
-    public static <T> AnnotatedAggregate<T> initialize(Callable<T> aggregateFactory, AggregateModel<T> aggregateModel,
-                                                       EventBus eventBus)
-            throws Exception {
+    public static <T> AnnotatedAggregate<T> initialize(Callable<T> aggregateFactory,
+                                                       AggregateModel<T> aggregateModel,
+                                                       EventBus eventBus) throws Exception {
         return initialize(aggregateFactory, aggregateModel, eventBus, false);
     }
 
@@ -158,7 +163,6 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
      * @param repositoryProvider Provides repositories for specific aggregate types
      * @param <T>                The type of the Aggregate root
      * @return An Aggregate instance, fully initialized
-     *
      * @throws Exception when an error occurs creating the aggregate root instance
      */
     public static <T> AnnotatedAggregate<T> initialize(Callable<T> aggregateFactory,
@@ -178,7 +182,6 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
      * @param generateSequences Whether to generate sequence numbers on events published from this aggregate
      * @param <T>               The type of the Aggregate root
      * @return An Aggregate instance, fully initialized
-     *
      * @throws Exception when an error occurs creating the aggregate root instance
      */
     public static <T> AnnotatedAggregate<T> initialize(Callable<T> aggregateFactory,
@@ -199,7 +202,6 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
      * @param generateSequences  Whether to generate sequence numbers on events published from this aggregate
      * @param <T>                The type of the Aggregate root
      * @return An Aggregate instance, fully initialized
-     *
      * @throws Exception when an error occurs creating the aggregate root instance
      */
     public static <T> AnnotatedAggregate<T> initialize(Callable<T> aggregateFactory,
@@ -261,8 +263,8 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
 
     /**
      * Enable sequences on this Aggregate, causing it to emit DomainEventMessages based on the given
-     * {@code lastKnownSequenceNumber}. Each Event applied will increase the sequence, allowing to trace each event
-     * back to the Aggregate instance that published it, in the order published.
+     * {@code lastKnownSequenceNumber}. Each Event applied will increase the sequence, allowing to trace each event back
+     * to the Aggregate instance that published it, in the order published.
      *
      * @param lastKnownSequenceNumber The sequence number to pass into the next event published
      */
@@ -305,7 +307,7 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
 
     /**
      * Returns the last sequence of any event published, or {@code null} if no events have been published yet. If
-     * sequences aren't enabled for this Aggregate, the this method will also return null;
+     * sequences aren't enabled for this Aggregate, this method will also return null.
      *
      * @return the last sequence of any event published, or {@code null} if no events have been published yet
      */
@@ -325,7 +327,7 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
                     "Since repository provider is not provided, we cannot spawn a new aggregate for %s",
                     aggregateType.getName()));
         }
-        Repository<R> repository = repositoryProvider.repositoryFor(aggregateType);
+        LegacyRepository<R> repository = repositoryProvider.repositoryFor(aggregateType);
         if (repository == null) {
             throw new IllegalStateException(format("There is no configured repository for %s",
                                                    aggregateType.getName()));
@@ -366,14 +368,14 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
     }
 
     /**
-     * Publish an event to the aggregate root and its entities first and external event handlers (using the given
-     * event bus) later.
+     * Publish an event to the aggregate root and its entities first and external event handlers (using the given event
+     * bus) later.
      *
      * @param msg the event message to publish
      */
     protected void publish(EventMessage<?> msg) {
         if (msg instanceof DomainEventMessage) {
-            lastKnownSequence = ((DomainEventMessage) msg).getSequenceNumber();
+            lastKnownSequence = ((DomainEventMessage<?>) msg).getSequenceNumber();
         }
         inspector.publish(msg, aggregateRoot);
         publishOnEventBus(msg);
@@ -390,15 +392,14 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
         }
     }
 
-    @SuppressWarnings("unchecked")
     @Override
-    public Object handle(Message<?> message) throws Exception {
+    public Object handle(@Nonnull Message<?> message, @Nonnull ProcessingContext context) throws Exception {
         Callable<Object> messageHandling;
 
         if (message instanceof CommandMessage) {
-            messageHandling = () -> handle((CommandMessage) message);
+            messageHandling = () -> handle((CommandMessage<?>) message, context);
         } else if (message instanceof EventMessage) {
-            messageHandling = () -> handle((EventMessage) message);
+            messageHandling = () -> handle((EventMessage<?>) message);
         } else {
             throw new IllegalArgumentException("Unsupported message type: " + message.getClass());
         }
@@ -406,28 +407,50 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
         return executeWithResult(messageHandling);
     }
 
-    @SuppressWarnings("unchecked")
-    private Object handle(CommandMessage<?> commandMessage) throws Exception {
+    private Object handle(CommandMessage<?> commandMessage, ProcessingContext context) throws Exception {
+        //noinspection unchecked
         List<AnnotatedCommandHandlerInterceptor<? super T>> interceptors =
                 inspector.commandHandlerInterceptors((Class<? extends T>) aggregateRoot.getClass())
                          .map(chi -> new AnnotatedCommandHandlerInterceptor<>(chi, aggregateRoot))
                          .collect(Collectors.toList());
-        MessageHandlingMember<? super T> handler = inspector.commandHandlers((Class<? extends T>) aggregateRoot.getClass())
-                                                            .filter(mh -> mh.canHandle(commandMessage))
-                                                            .findFirst()
-                                                            .orElseThrow(() -> new NoHandlerForCommandException(format("No handler available to handle command [%s]", commandMessage.getCommandName())));
+
+        //noinspection unchecked
+        List<MessageHandlingMember<? super T>> potentialHandlers =
+                inspector.commandHandlers((Class<? extends T>) aggregateRoot.getClass())
+                         .filter(mh -> mh.canHandle(commandMessage, context))
+                         .collect(Collectors.toList());
+        if (potentialHandlers.isEmpty()) {
+            throw new NoHandlerForCommandException(commandMessage);
+        }
 
         Object result;
         if (interceptors.isEmpty()) {
-            result = handler.handle(commandMessage, aggregateRoot);
+            result = findHandlerAndHandleCommand(potentialHandlers, commandMessage, context);
         } else {
+            //noinspection unchecked
             result = new DefaultInterceptorChain<>(
-                    (UnitOfWork<CommandMessage<?>>) CurrentUnitOfWork.get(),
+                    (LegacyUnitOfWork<CommandMessage<?>>) CurrentUnitOfWork.get(),
                     interceptors,
-                    m -> handler.handle(commandMessage, aggregateRoot)
-            ).proceed();
+                    (m, ctx) -> findHandlerAndHandleCommand(potentialHandlers, commandMessage, context)
+            ).proceedSync(context);
         }
         return result;
+    }
+
+    private Object findHandlerAndHandleCommand(List<MessageHandlingMember<? super T>> handlers,
+                                               CommandMessage<?> command,
+                                               ProcessingContext context) throws Exception {
+        //noinspection unchecked
+        return handlers.stream()
+                       .filter(mh -> mh.unwrap(ForwardingCommandMessageHandlingMember.class)
+                                       .map(c -> c.canForward(command, aggregateRoot))
+                                       .orElse(true))
+                       .findFirst()
+                       .orElseThrow(() -> new ChildEntityNotFoundException(
+                               "Aggregate cannot handle command [" + command.type()
+                                       + "], as there is no entity instance within the aggregate to forward it to."
+                       ))
+                       .handleSync(command, context, aggregateRoot);
     }
 
     private Object handle(EventMessage<?> eventMessage) {
@@ -470,19 +493,20 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
      * @return the resulting message
      */
     protected <P> EventMessage<P> createMessage(P payload, MetaData metaData) {
+        MessageType type = new MessageType(payload.getClass());
         if (lastKnownSequence != null) {
-            String type = inspector.declaredType(rootType())
-                                   .orElse(rootType().getSimpleName());
+            String aggregateType = inspector.declaredType(rootType())
+                                            .orElse(rootType().getSimpleName());
             long seq = lastKnownSequence + 1;
             String id = identifierAsString();
             if (id == null) {
                 Assert.state(seq == 0,
                              () -> "The aggregate identifier has not been set. It must be set at the latest when applying the creation event");
-                return new LazyIdentifierDomainEventMessage<>(type, seq, payload, metaData);
+                return new LazyIdentifierDomainEventMessage<>(aggregateType, seq, type, payload, metaData);
             }
-            return new GenericDomainEventMessage<>(type, identifierAsString(), seq, payload, metaData);
+            return new GenericDomainEventMessage<>(aggregateType, identifierAsString(), seq, type, payload, metaData);
         }
-        return new GenericEventMessage<>(payload, metaData);
+        return new GenericEventMessage<>(type, payload, metaData);
     }
 
     /**
@@ -511,15 +535,14 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
     }
 
     /**
-     * Apply a new event message to the aggregate and then publish this message to external systems. If the given {@code
-     * payloadOrMessage} is an instance of a {@link Message} an event message is applied with the payload and metadata
-     * of the given message, otherwise an event message is applied with given payload and empty metadata.
+     * Apply a new event message to the aggregate and then publish this message to external systems. If the given
+     * {@code payloadOrMessage} is an instance of a {@link Message} an event message is applied with the payload and
+     * metadata of the given message, otherwise an event message is applied with given payload and empty metadata.
      *
      * @param payloadOrMessage defines the payload and optionally metadata to apply to the aggregate
      */
     protected void applyMessageOrPayload(Object payloadOrMessage) {
-        if (payloadOrMessage instanceof Message) {
-            Message message = (Message) payloadOrMessage;
+        if (payloadOrMessage instanceof Message<?> message) {
             apply(message.getPayload(), message.getMetaData());
         } else if (payloadOrMessage != null) {
             apply(payloadOrMessage, MetaData.emptyInstance());
@@ -528,10 +551,12 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
 
     private class LazyIdentifierDomainEventMessage<P> extends GenericDomainEventMessage<P> {
 
-        private static final long serialVersionUID = -1624446038982565972L;
-
-        public LazyIdentifierDomainEventMessage(String type, long seq, P payload, MetaData metaData) {
-            super(type, null, seq, payload, metaData);
+        public LazyIdentifierDomainEventMessage(String aggregateType,
+                                                long seq,
+                                                MessageType type,
+                                                P payload,
+                                                MetaData metaData) {
+            super(aggregateType, null, seq, type, payload, metaData);
         }
 
         @Override
@@ -540,27 +565,34 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
         }
 
         @Override
-        public GenericDomainEventMessage<P> withMetaData(Map<String, ?> newMetaData) {
+        public GenericDomainEventMessage<P> withMetaData(@Nonnull Map<String, String> newMetaData) {
             String identifier = identifierAsString();
             if (identifier != null) {
-                return new GenericDomainEventMessage<>(getType(), getAggregateIdentifier(), getSequenceNumber(),
-                                                       getPayload(), getMetaData(), getIdentifier(), getTimestamp());
+                return new GenericDomainEventMessage<>(
+                        getType(), getAggregateIdentifier(), getSequenceNumber(),
+                        getIdentifier(), type(), getPayload(), getMetaData(), getTimestamp()
+                );
             } else {
-                return new LazyIdentifierDomainEventMessage<>(getType(), getSequenceNumber(), getPayload(),
-                                                              MetaData.from(newMetaData));
+                return new LazyIdentifierDomainEventMessage<>(
+                        getType(), getSequenceNumber(),
+                        type(), getPayload(), MetaData.from(newMetaData)
+                );
             }
         }
 
         @Override
-        public GenericDomainEventMessage<P> andMetaData(Map<String, ?> additionalMetaData) {
+        public GenericDomainEventMessage<P> andMetaData(@Nonnull Map<String, String> additionalMetaData) {
             String identifier = identifierAsString();
             if (identifier != null) {
-                return new GenericDomainEventMessage<>(getType(), getAggregateIdentifier(), getSequenceNumber(),
-                                                       getPayload(), getMetaData(), getIdentifier(), getTimestamp())
-                        .andMetaData(additionalMetaData);
+                return new GenericDomainEventMessage<>(
+                        getType(), getAggregateIdentifier(), getSequenceNumber(),
+                        getIdentifier(), type(), getPayload(), getMetaData(), getTimestamp()
+                ).andMetaData(additionalMetaData);
             } else {
-                return new LazyIdentifierDomainEventMessage<>(getType(), getSequenceNumber(), getPayload(),
-                                                              getMetaData().mergedWith(additionalMetaData));
+                return new LazyIdentifierDomainEventMessage<>(
+                        getType(), getSequenceNumber(),
+                        type(), getPayload(), getMetaData().mergedWith(additionalMetaData)
+                );
             }
         }
     }

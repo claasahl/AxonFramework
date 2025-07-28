@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2024. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,12 +17,14 @@
 package org.axonframework.eventhandling;
 
 /**
- * Represents an {@link EventMessage} containing a {@link TrackingToken}. The tracking token can be used be {@link
- * EventProcessor event processors} to keep track of which events it has processed.
+ * Represents an {@link EventMessage} containing a {@link TrackingToken}. The tracking token can be used be
+ * {@link EventProcessor event processors} to keep track of which events it has processed.
  *
  * @param <T> The type of payload contained in this Message
  * @author Rene de Waele
+ * @deprecated In favor of returning entries that contain a token and event message separately
  */
+@Deprecated
 public interface TrackedEventMessage<T> extends EventMessage<T> {
 
     /**
@@ -42,5 +44,4 @@ public interface TrackedEventMessage<T> extends EventMessage<T> {
      * @return a new instance of a message with a different tracking token
      */
     TrackedEventMessage<T> withTrackingToken(TrackingToken trackingToken);
-
 }

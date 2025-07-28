@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,34 +16,48 @@
 
 package org.axonframework.messaging;
 
+import jakarta.annotation.Nonnull;
+
 import java.util.Map;
 
 /**
- * Abstract base class for Messages.
+ * Abstract base class for {@link Message Messages}.
  *
+ * @param <P> The type of {@link #getPayload() payload} contained in this {@link AbstractMessage}.
  * @author Rene de Waele
+ * @author Steven van Beelen
+ * @since 3.0.0
  */
-public abstract class AbstractMessage<T> implements Message<T> {
+public abstract class AbstractMessage<P> implements Message<P> {
 
-    private static final long serialVersionUID = -5847906865361406657L;
     private final String identifier;
+    private final MessageType type;
 
     /**
-     * Initializes a new message with given identifier.
+     * Initializes a new {@link Message} with given {@code identifier} and {@code type}.
      *
-     * @param identifier the message identifier
+     * @param identifier The identifier of this {@link Message}.
+     * @param type       The {@link MessageType type} for this {@link Message}.
      */
-    public AbstractMessage(String identifier) {
+    public AbstractMessage(@Nonnull String identifier,
+                           @Nonnull MessageType type) {
         this.identifier = identifier;
+        this.type = type;
     }
 
     @Override
     public String getIdentifier() {
-        return identifier;
+        return this.identifier;
+    }
+
+    @Nonnull
+    @Override
+    public MessageType type() {
+        return this.type;
     }
 
     @Override
-    public Message<T> withMetaData(Map<String, ?> metaData) {
+    public Message<P> withMetaData(@Nonnull Map<String, String> metaData) {
         if (getMetaData().equals(metaData)) {
             return this;
         }
@@ -51,7 +65,7 @@ public abstract class AbstractMessage<T> implements Message<T> {
     }
 
     @Override
-    public Message<T> andMetaData(Map<String, ?> metaData) {
+    public Message<P> andMetaData(@Nonnull Map<String, String> metaData) {
         if (metaData.isEmpty()) {
             return this;
         }
@@ -64,5 +78,5 @@ public abstract class AbstractMessage<T> implements Message<T> {
      * @param metaData The metadata in the new message
      * @return a copy of this instance with given metadata
      */
-    protected abstract Message<T> withMetaData(MetaData metaData);
+    protected abstract Message<P> withMetaData(MetaData metaData);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,27 @@
 package org.axonframework.deadline.quartz;
 
 import org.axonframework.common.transaction.TransactionManager;
+import org.axonframework.deadline.DeadlineManagerSpanFactory;
 import org.axonframework.deadline.DeadlineMessage;
 import org.axonframework.deadline.GenericDeadlineMessage;
 import org.axonframework.messaging.DefaultInterceptorChain;
 import org.axonframework.messaging.ExecutionException;
 import org.axonframework.messaging.InterceptorChain;
+import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageHandlerInterceptor;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.messaging.ResultMessage;
 import org.axonframework.messaging.ScopeAware;
 import org.axonframework.messaging.ScopeAwareProvider;
 import org.axonframework.messaging.ScopeDescriptor;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.axonframework.serialization.SerializedObject;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.SimpleSerializedObject;
+import org.axonframework.tracing.Span;
+import org.axonframework.tracing.SpanScope;
 import org.quartz.Job;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
@@ -51,8 +57,8 @@ import static org.axonframework.deadline.quartz.DeadlineJob.DeadlineJobDataBinde
 import static org.axonframework.messaging.Headers.*;
 
 /**
- * Quartz job which depicts handling of a scheduled deadline message. The {@link DeadlineMessage} and {@link
- * ScopeDescriptor} are retrieved from the {@link JobExecutionContext}. The {@link TransactionManager} and
+ * Quartz job which depicts handling of a scheduled deadline message. The {@link DeadlineMessage} and
+ * {@link ScopeDescriptor} are retrieved from the {@link JobExecutionContext}. The {@link TransactionManager} and
  * {@link ScopeAware} components are fetched from {@link SchedulerContext}.
  *
  * @author Milan Savic
@@ -77,6 +83,11 @@ public class DeadlineJob implements Job {
      * The key under which the {@link Serializer} is stored within the {@link SchedulerContext}.
      */
     public static final String JOB_DATA_SERIALIZER = Serializer.class.getName();
+
+    /**
+     * The key under which the {@link DeadlineManagerSpanFactory} is stored within the {@link SchedulerContext}.
+     */
+    public static final String SPAN_FACTORY = DeadlineManagerSpanFactory.class.getName();
 
     /**
      * The key under which the {@link MessageHandlerInterceptor}s are stored within the {@link SchedulerContext}.
@@ -111,6 +122,7 @@ public class DeadlineJob implements Job {
         Serializer serializer = (Serializer) schedulerContext.get(JOB_DATA_SERIALIZER);
         TransactionManager transactionManager = (TransactionManager) schedulerContext.get(TRANSACTION_MANAGER_KEY);
         ScopeAwareProvider scopeAwareComponents = (ScopeAwareProvider) schedulerContext.get(SCOPE_AWARE_RESOLVER);
+        DeadlineManagerSpanFactory spanFactory = (DeadlineManagerSpanFactory) schedulerContext.get(SPAN_FACTORY);
         @SuppressWarnings("unchecked")
         List<MessageHandlerInterceptor<? super DeadlineMessage<?>>> handlerInterceptors =
                 (List<MessageHandlerInterceptor<? super DeadlineMessage<?>>>)
@@ -119,46 +131,63 @@ public class DeadlineJob implements Job {
         DeadlineMessage<?> deadlineMessage = deadlineMessage(serializer, jobData);
         ScopeDescriptor deadlineScope = deadlineScope(serializer, jobData);
 
-        DefaultUnitOfWork<DeadlineMessage<?>> unitOfWork = DefaultUnitOfWork.startAndGet(deadlineMessage);
-        unitOfWork.attachTransaction(transactionManager);
-        InterceptorChain chain =
-                new DefaultInterceptorChain<>(unitOfWork,
-                                              handlerInterceptors,
-                                              interceptedDeadlineMessage -> {
-                                                  executeScheduledDeadline(scopeAwareComponents,
-                                                                           interceptedDeadlineMessage,
-                                                                           deadlineScope);
-                                                  return null;
-                                              });
+        Span span = spanFactory.createExecuteSpan(context.getTrigger().getJobKey().getGroup(),
+                                                  context.getTrigger().getJobKey().getName(),
+                                                  deadlineMessage).start();
+        try (SpanScope unused = span.makeCurrent()) {
+            LegacyDefaultUnitOfWork<DeadlineMessage<?>> unitOfWork = LegacyDefaultUnitOfWork.startAndGet(
+                    deadlineMessage);
+            unitOfWork.attachTransaction(transactionManager);
+            unitOfWork.onRollback(uow -> span.recordException(uow.getExecutionResult()
+                                                                 .getExceptionResult()));
+            InterceptorChain chain =
+                    new DefaultInterceptorChain<>(unitOfWork,
+                                                  handlerInterceptors,
+                                                  (interceptedDeadlineMessage, ctx) -> {
+                                                      executeScheduledDeadline(
+                                                              scopeAwareComponents,
+                                                              interceptedDeadlineMessage,
+                                                              ctx,
+                                                              deadlineScope);
+                                                      return null;
+                                                  });
 
-        ResultMessage<?> resultMessage = unitOfWork.executeWithResult(chain::proceed);
-        if (resultMessage.isExceptional()) {
-            Throwable exceptionResult = resultMessage.exceptionResult();
+            ResultMessage<?> resultMessage = unitOfWork.executeWithResult(chain::proceedSync);
+            if (resultMessage.isExceptional()) {
+                Throwable exceptionResult = resultMessage.exceptionResult();
+                span.recordException(exceptionResult);
 
-            @SuppressWarnings("unchecked")
-            Predicate<Throwable> refirePolicy = (Predicate<Throwable>) schedulerContext.get(REFIRE_IMMEDIATELY_POLICY);
-            if (refirePolicy.test(exceptionResult)) {
-                logger.error("Exception occurred during processing a deadline job which will be retried [{}]",
+                @SuppressWarnings("unchecked")
+                Predicate<Throwable> refirePolicy = (Predicate<Throwable>) schedulerContext.get(
+                        REFIRE_IMMEDIATELY_POLICY);
+                if (refirePolicy.test(exceptionResult)) {
+                    logger.error(
+                            "Exception occurred during processing a deadline job which will be retried [{}]",
+                            jobDetail.getDescription(),
+                            exceptionResult);
+                    throw new JobExecutionException(exceptionResult, REFIRE_IMMEDIATELY);
+                }
+                logger.error("Exception occurred during processing a deadline job [{}]",
                              jobDetail.getDescription(), exceptionResult);
-                throw new JobExecutionException(exceptionResult, REFIRE_IMMEDIATELY);
+                throw new JobExecutionException(exceptionResult);
+            } else if (logger.isInfoEnabled()) {
+                logger.info("Job successfully executed. Deadline message [{}] processed.",
+                            deadlineMessage.getPayloadType().getSimpleName());
             }
-            logger.error("Exception occurred during processing a deadline job [{}]",
-                         jobDetail.getDescription(), exceptionResult);
-            throw new JobExecutionException(exceptionResult);
-        } else if (logger.isInfoEnabled()) {
-            logger.info("Job successfully executed. Deadline message [{}] processed.",
-                        deadlineMessage.getPayloadType().getSimpleName());
+        } finally {
+            span.end();
         }
     }
 
     private void executeScheduledDeadline(ScopeAwareProvider scopeAwareComponents,
-                                          DeadlineMessage deadlineMessage,
+                                          DeadlineMessage<?> deadlineMessage,
+                                          ProcessingContext context,
                                           ScopeDescriptor deadlineScope) {
         scopeAwareComponents.provideScopeAwareStream(deadlineScope)
                             .filter(scopeAwareComponent -> scopeAwareComponent.canResolve(deadlineScope))
                             .forEach(scopeAwareComponent -> {
                                 try {
-                                    scopeAwareComponent.send(deadlineMessage, deadlineScope);
+                                    scopeAwareComponent.send(deadlineMessage, context, deadlineScope);
                                 } catch (Exception e) {
                                     String exceptionMessage = String.format(
                                             "Failed to send a DeadlineMessage for scope [%s]",
@@ -175,20 +204,6 @@ public class DeadlineJob implements Job {
     public static class DeadlineJobDataBinder {
 
         /**
-         * Key pointing to the serialized {@link DeadlineMessage}.
-         *
-         * @deprecated in favor of the separate DeadlineMessage keys | only maintained for backwards compatibility
-         */
-        @Deprecated
-        public static final String SERIALIZED_DEADLINE_MESSAGE = "serializedDeadlineMessage";
-        /**
-         * Key pointing to the class name of the serialized {@link DeadlineMessage}.
-         *
-         * @deprecated in favor of the separate DeadlineMessage keys | only maintained for backwards compatibility
-         */
-        @Deprecated
-        public static final String SERIALIZED_DEADLINE_MESSAGE_CLASS_NAME = "serializedDeadlineMessageClassName";
-        /**
          * Key pointing to the serialized deadline {@link ScopeDescriptor} in the {@link JobDataMap}
          */
         public static final String SERIALIZED_DEADLINE_SCOPE = "serializedDeadlineScope";
@@ -196,20 +211,24 @@ public class DeadlineJob implements Job {
          * Key pointing to the class name of the deadline {@link ScopeDescriptor} in the {@link JobDataMap}
          */
         public static final String SERIALIZED_DEADLINE_SCOPE_CLASS_NAME = "serializedDeadlineScopeClassName";
+        /**
+         * Key pointing to the {@link Message#type()} as a {@code String} of the deadline in the {@link JobDataMap}.
+         */
+        public static final String TYPE = "type";
 
         /**
-         * Serializes the provided {@code deadlineMessage} and {@code deadlineScope} and puts them in a {@link
-         * JobDataMap}.
+         * Serializes the provided {@code deadlineMessage} and {@code deadlineScope} and puts them in a
+         * {@link JobDataMap}.
          *
-         * @param serializer      the {@link Serializer} used to serialize the given {@code deadlineMessage} and {@code
-         *                        deadlineScope}
+         * @param serializer      the {@link Serializer} used to serialize the given {@code deadlineMessage} and
+         *                        {@code deadlineScope}
          * @param deadlineMessage the {@link DeadlineMessage} to be handled
          * @param deadlineScope   the {@link ScopeDescriptor} of the {@link org.axonframework.messaging.Scope} the
          *                        {@code deadlineMessage} should go to.
          * @return a {@link JobDataMap} containing the {@code deadlineMessage} and {@code deadlineScope}
          */
         public static JobDataMap toJobData(Serializer serializer,
-                                           DeadlineMessage deadlineMessage,
+                                           DeadlineMessage<?> deadlineMessage,
                                            ScopeDescriptor deadlineScope) {
             JobDataMap jobData = new JobDataMap();
             putDeadlineMessage(jobData, deadlineMessage, serializer);
@@ -219,10 +238,11 @@ public class DeadlineJob implements Job {
 
         @SuppressWarnings("Duplicates")
         private static void putDeadlineMessage(JobDataMap jobData,
-                                               DeadlineMessage deadlineMessage,
+                                               DeadlineMessage<?> deadlineMessage,
                                                Serializer serializer) {
             jobData.put(DEADLINE_NAME, deadlineMessage.getDeadlineName());
             jobData.put(MESSAGE_ID, deadlineMessage.getIdentifier());
+            jobData.put(TYPE, deadlineMessage.type().toString());
             jobData.put(MESSAGE_TIMESTAMP, deadlineMessage.getTimestamp().toString());
 
             SerializedObject<byte[]> serializedDeadlinePayload =
@@ -245,31 +265,21 @@ public class DeadlineJob implements Job {
         /**
          * Extracts a {@link DeadlineMessage} from provided {@code jobDataMap}.
          *
-         * <b>Note</b> that this function is able to retrieve two different formats of DeadlineMessage. The first being
-         * a now deprecated solution which used to serialized the entire {@link DeadlineMessage} into the
-         * {@link JobDataMap}. This is only kept for backwards compatibility. The second is the new solution which
-         * stores all the required deadline fields separately, only de-/serializing the payload and metadata of a
-         * DeadlineMessage instead of the entire message.
-         *
          * @param serializer the {@link Serializer} used to deserialize the contents of the given {@code} jobDataMap}
          *                   into a {@link DeadlineMessage}
          * @param jobDataMap the {@link JobDataMap} which should contain a {@link DeadlineMessage}
          * @return the {@link DeadlineMessage} pulled from the {@code jobDataMap}
          */
-        public static DeadlineMessage deadlineMessage(Serializer serializer, JobDataMap jobDataMap) {
-            if (jobDataMap.containsKey(SERIALIZED_DEADLINE_MESSAGE)) {
-                SimpleSerializedObject<byte[]> serializedDeadlineMessage = new SimpleSerializedObject<>(
-                        (byte[]) jobDataMap.get(SERIALIZED_DEADLINE_MESSAGE), byte[].class,
-                        (String) jobDataMap.get(SERIALIZED_DEADLINE_MESSAGE_CLASS_NAME), null
-                );
-                return serializer.deserialize(serializedDeadlineMessage);
-            }
-
-            return new GenericDeadlineMessage<>((String) jobDataMap.get(DEADLINE_NAME),
-                                                (String) jobDataMap.get(MESSAGE_ID),
-                                                deserializeDeadlinePayload(serializer, jobDataMap),
-                                                deserializeDeadlineMetaData(serializer, jobDataMap),
-                                                retrieveDeadlineTimestamp(jobDataMap));
+        @SuppressWarnings("unchecked")
+        public static <T> DeadlineMessage<T> deadlineMessage(Serializer serializer, JobDataMap jobDataMap) {
+            return (DeadlineMessage<T>) new GenericDeadlineMessage<>(
+                    (String) jobDataMap.get(DEADLINE_NAME),
+                    (String) jobDataMap.get(MESSAGE_ID),
+                    MessageType.fromString((String) jobDataMap.get(TYPE)),
+                    deserializeDeadlinePayload(serializer, jobDataMap),
+                    deserializeDeadlineMetaData(serializer, jobDataMap),
+                    retrieveDeadlineTimestamp(jobDataMap)
+            );
         }
 
         private static Object deserializeDeadlinePayload(Serializer serializer, JobDataMap jobDataMap) {
@@ -282,7 +292,7 @@ public class DeadlineJob implements Job {
             return serializer.deserialize(serializedDeadlinePayload);
         }
 
-        private static Map<String, ?> deserializeDeadlineMetaData(Serializer serializer, JobDataMap jobDataMap) {
+        private static Map<String, String> deserializeDeadlineMetaData(Serializer serializer, JobDataMap jobDataMap) {
             SimpleSerializedObject<byte[]> serializedDeadlineMetaData = new SimpleSerializedObject<>(
                     (byte[]) jobDataMap.get(MESSAGE_METADATA), byte[].class, MetaData.class.getName(), null
             );

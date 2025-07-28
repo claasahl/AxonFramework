@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.axonframework.modelling.saga;
 
 import org.axonframework.eventhandling.EventMessageHandler;
 import org.axonframework.eventhandling.ResetNotSupportedException;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -81,12 +82,12 @@ public interface Saga<T> extends EventMessageHandler {
     }
 
     @Override
-    default void prepareReset() {
-        prepareReset(null);
+    default void prepareReset(ProcessingContext processingContext) {
+        prepareReset(null, processingContext);
     }
 
     @Override
-    default void prepareReset(Object resetContext) {
+    default void prepareReset(Object resetContext, ProcessingContext processingContext) {
         throw new ResetNotSupportedException("Sagas do not support reset");
     }
 }

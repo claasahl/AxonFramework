@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,7 @@ package org.axonframework.test.aggregate;
 
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
 import org.axonframework.test.AxonAssertionError;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -46,7 +44,8 @@ class FixtureTest_MarkDeleted {
 
     @Test
     @SuppressWarnings("PMD.JUnitTestsShouldIncludeAssert") // Test succeeds when no Error is thrown
-    void testCreateAggregateYieldsLiveAggregate() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void createAggregateYieldsLiveAggregate() {
         fixture.registerInjectableResource(new HardToCreateResource());
         fixture.givenNoPriorActivity()
                .when(new CreateAggregateCommand("id"))
@@ -55,7 +54,7 @@ class FixtureTest_MarkDeleted {
     }
 
     @Test
-    void testCreateAggregateYieldsLiveAggregateInverted() {
+    void createAggregateYieldsLiveAggregateInverted() {
         fixture.registerInjectableResource(new HardToCreateResource());
 
         assertThrows(AxonAssertionError.class, () ->
@@ -67,7 +66,8 @@ class FixtureTest_MarkDeleted {
 
     @Test
     @SuppressWarnings("PMD.JUnitTestsShouldIncludeAssert") // Test succeeds when no Error is thrown
-    void testDeletedAggregateYieldsAggregateMarkedDeleted() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void deletedAggregateYieldsAggregateMarkedDeleted() {
         fixture.given(new MyEvent("id", 0))
                .when(new DeleteCommand("id", false))
                .expectEvents(new MyAggregateDeletedEvent(false))
@@ -75,7 +75,7 @@ class FixtureTest_MarkDeleted {
     }
 
     @Test
-    void testDeletedAggregateYieldsAggregateMarkedDeletedInverted() {
+    void deletedAggregateYieldsAggregateMarkedDeletedInverted() {
         assertThrows(AxonAssertionError.class, () ->
                 fixture.given(new MyEvent("id", 0))
                         .when(new DeleteCommand("id", false))

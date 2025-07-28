@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,10 @@ package org.axonframework.integrationtests.eventsourcing.eventstore.benchmark.jp
 import org.axonframework.common.transaction.Transaction;
 import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.eventsourcing.eventstore.jpa.JpaEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.jpa.LegacyJpaEventStorageEngine;
 import org.axonframework.integrationtests.eventsourcing.eventstore.benchmark.AbstractEventStoreBenchmark;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.axonframework.spring.messaging.unitofwork.SpringTransactionManager;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
@@ -41,14 +41,15 @@ public class JpaEventStoreBenchMark extends AbstractEventStoreBenchmark {
         benchmark.start();
     }
 
-    public JpaEventStoreBenchMark(JpaEventStorageEngine storageEngine, PlatformTransactionManager transactionManager) {
+    public JpaEventStoreBenchMark(LegacyJpaEventStorageEngine storageEngine,
+                                  PlatformTransactionManager transactionManager) {
         super(storageEngine);
         this.transactionManager = new SpringTransactionManager(transactionManager);
     }
 
     @Override
     protected void storeEvents(EventMessage<?>... events) {
-        UnitOfWork<?> unitOfWork = CurrentUnitOfWork.get();
+        LegacyUnitOfWork<?> unitOfWork = CurrentUnitOfWork.get();
         Transaction transaction = transactionManager.startTransaction();
         unitOfWork.onCommit(u -> transaction.commit());
         unitOfWork.onRollback(u -> transaction.rollback());

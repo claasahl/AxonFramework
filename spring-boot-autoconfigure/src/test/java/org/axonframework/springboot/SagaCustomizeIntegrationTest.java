@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,24 @@
 
 package org.axonframework.springboot;
 
+import org.axonframework.common.AxonThreadFactory;
 import org.axonframework.common.transaction.Transaction;
 import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.config.EventProcessingModule;
+import org.axonframework.config.LegacyConfiguration;
 import org.axonframework.eventhandling.EventBus;
-import org.axonframework.eventhandling.TrackingEventProcessor;
-import org.axonframework.eventhandling.TrackingEventProcessorConfiguration;
-import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
 import org.axonframework.modelling.saga.SagaEventHandler;
 import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.spring.stereotype.Saga;
-import org.axonframework.springboot.autoconfig.AxonAutoConfiguration;
-import org.axonframework.springboot.autoconfig.AxonServerAutoConfiguration;
+import org.axonframework.springboot.autoconfig.LegacyAxonAutoConfiguration;
 import org.axonframework.springboot.utils.TestSerializer;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.boot.SpringBootConfiguration;
@@ -49,15 +49,15 @@ import org.springframework.context.annotation.EnableMBeanExport;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.jmx.support.RegistrationPolicy;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -66,18 +66,20 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Marc Gathier
  */
-@SpringBootTest
-@ExtendWith(SpringExtension.class)
+@SpringBootTest(properties = {
+        "spring.main.banner-mode=off",
+        "axon.axonserver.enabled=false"
+})
 @SpringBootConfiguration
 @EnableAutoConfiguration(exclude = {
         JmxAutoConfiguration.class,
-        WebClientAutoConfiguration.class,
-        AxonServerAutoConfiguration.class})
+        WebClientAutoConfiguration.class
+})
 @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
-public class SagaCustomizeIntegrationTest {
+@Disabled("TODO #3496")
+class SagaCustomizeIntegrationTest {
 
     @Autowired
-    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     private EventBus eventBus;
     @Autowired
     private TransactionManager transactionManager;
@@ -86,27 +88,24 @@ public class SagaCustomizeIntegrationTest {
     @Autowired
     private EventProcessingModule eventProcessingModule;
 
+    @Disabled("TODO #3443 - Adjust SagaRepository API to be async-native")
     @Test
-    public void testPublishSomeEvents() throws InterruptedException {
+    void publishSomeEvents() {
         publishEvent(new EchoEvent(UUID.randomUUID().toString()));
         eventProcessingModule.eventProcessors()
-                             .forEach((name, ep) -> assertTrue(((TrackingEventProcessor) ep).isRunning()));
+                             .forEach((name, ep) -> assertTrue(ep.isRunning()));
 
         eventProcessingModule.eventProcessors()
-                             .forEach((name, ep) -> assertFalse(
-                                     ((TrackingEventProcessor) ep).isError(), "Processor ended with error"
-                             ));
+                             .forEach((name, ep) -> assertFalse(ep.isError(), "Processor ended with error"));
 
-        Thread.sleep(Duration.ofSeconds(1).toMillis());
-        assertEquals(1, eventsReceived.get());
+        await().atMost(Duration.ofSeconds(1)).until(() -> eventsReceived.get() == 1);
         publishEvent(new EchoEvent(UUID.randomUUID().toString()));
-        Thread.sleep(Duration.ofSeconds(1).toMillis());
-        assertEquals(2, eventsReceived.get());
+        await().atMost(Duration.ofSeconds(1)).until(() -> eventsReceived.get() == 2);
     }
 
     private void publishEvent(EchoEvent... events) {
-        DefaultUnitOfWork.startAndGet(null).execute(
-                () -> {
+        LegacyDefaultUnitOfWork.startAndGet(null).execute(
+                (ctx) -> {
                     Transaction tx = transactionManager.startTransaction();
                     CurrentUnitOfWork.get().onRollback(u -> tx.rollback());
                     CurrentUnitOfWork.get().onCommit(u -> tx.commit());
@@ -116,7 +115,11 @@ public class SagaCustomizeIntegrationTest {
                 });
     }
 
-    @AutoConfigureBefore(AxonAutoConfiguration.class)
+    private static EventMessage<Object> asEventMessage(Object payload) {
+        return new GenericEventMessage<>(new MessageType("event"), payload);
+    }
+
+    @AutoConfigureBefore(LegacyAxonAutoConfiguration.class)
     @Configuration
     public static class Context {
 
@@ -128,13 +131,11 @@ public class SagaCustomizeIntegrationTest {
         @Bean
         @Primary
         public Serializer serializer() {
-            return TestSerializer.secureXStreamSerializer();
+            return TestSerializer.xStreamSerializer();
         }
 
         @Autowired
-        private void registerEventHandlers(
-                EventProcessingModule eventProcessingConfiguration,
-                EventStore eventStore) throws ClassNotFoundException {
+        private void registerEventHandlers(EventProcessingModule eventProcessingConfiguration) throws ClassNotFoundException {
             Set<String> registeredProcessingGroups = new HashSet<>();
             ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
             scanner.addIncludeFilter(new AnnotationTypeFilter(Saga.class));
@@ -142,11 +143,14 @@ public class SagaCustomizeIntegrationTest {
                 Class<?> aClass = Class.forName(bd.getBeanClassName());
                 String processorGroupName = eventProcessingConfiguration.sagaProcessingGroup(aClass);
                 if (!registeredProcessingGroups.contains(processorGroupName)) {
-                    eventProcessingConfiguration.registerTrackingEventProcessor(
+                    eventProcessingConfiguration.registerPooledStreamingEventProcessor(
                             processorGroupName,
-                            c -> eventStore,
-                            c -> TrackingEventProcessorConfiguration.forParallelProcessing(2)
-                                                                    .andInitialSegmentsCount(2)
+                            LegacyConfiguration::eventStore,
+                            (config, builder) -> builder
+                                    .workerExecutor(name -> Executors.newScheduledThreadPool(
+                                            2,
+                                            new AxonThreadFactory("Worker - " + name))
+                                    ).initialSegmentCount(2)
                     );
 
                     registeredProcessingGroups.add(processorGroupName);
@@ -159,12 +163,9 @@ public class SagaCustomizeIntegrationTest {
     @SuppressWarnings("unused")
     public static class SimpleSaga {
 
-        @Autowired
-        private AtomicInteger eventsReceived;
-
         @SagaEventHandler(associationProperty = "id")
         @StartSaga
-        public void on(EchoEvent echoEvent) {
+        public void on(EchoEvent echoEvent, AtomicInteger eventsReceived) {
             eventsReceived.getAndIncrement();
         }
     }

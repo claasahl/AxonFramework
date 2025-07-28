@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,18 @@
 
 package org.axonframework.messaging.interceptors;
 
+import org.axonframework.messaging.Context.ResourceKey;
 import org.axonframework.messaging.InterceptorChain;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageHandlerInterceptor;
+import org.axonframework.messaging.MessageStream;
 import org.axonframework.messaging.correlation.CorrelationDataProvider;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import jakarta.annotation.Nonnull;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Message interceptor that registers {@link CorrelationDataProvider CorrelationDataProviders} with the Unit of Work.
@@ -39,6 +41,7 @@ import java.util.List;
  */
 public class CorrelationDataInterceptor<T extends Message<?>> implements MessageHandlerInterceptor<T> {
 
+    public static final ResourceKey<Map<String, Object>> CORRELATION_DATA = ResourceKey.withLabel("CorrelationData");
     private final List<CorrelationDataProvider> correlationDataProviders;
 
     /**
@@ -60,9 +63,20 @@ public class CorrelationDataInterceptor<T extends Message<?>> implements Message
     }
 
     @Override
-    public Object handle(UnitOfWork<? extends T> unitOfWork, InterceptorChain interceptorChain) throws Exception {
+    public Object handle(@Nonnull LegacyUnitOfWork<? extends T> unitOfWork, @Nonnull ProcessingContext context, @Nonnull InterceptorChain interceptorChain)
+            throws Exception {
         correlationDataProviders.forEach(unitOfWork::registerCorrelationDataProvider);
-        return interceptorChain.proceed();
+        return interceptorChain.proceedSync(context);
     }
 
+    @Override
+    public <M extends T, R extends Message<?>> MessageStream<R> interceptOnHandle(
+            @Nonnull M message,
+            ProcessingContext context,
+            InterceptorChain<M, R> interceptorChain
+    ) {
+        Map<String, Object> map = new ConcurrentHashMap<>();
+        correlationDataProviders.forEach(c -> map.putAll(c.correlationDataFor(message)));
+        return interceptorChain.proceed(message, context.withResource(CORRELATION_DATA, map));
+    }
 }

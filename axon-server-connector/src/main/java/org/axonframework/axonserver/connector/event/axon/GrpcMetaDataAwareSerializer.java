@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,18 @@ import org.axonframework.serialization.SerializedType;
 import org.axonframework.serialization.Serializer;
 
 import java.util.Map;
+import java.util.Objects;
+import jakarta.annotation.Nonnull;
 
 /**
  * Wrapper around standard Axon Framework serializer that can deserialize Metadata from AxonServer events.
  *
  * @author Marc Gathier
  * @since 4.0
+ * @deprecated Replaced entirely by the fact that metadata only accepts String-based values.
  */
-class GrpcMetaDataAwareSerializer implements Serializer {
+@Deprecated(forRemoval = true, since = "5.0.0")
+public final class GrpcMetaDataAwareSerializer implements Serializer {
 
     private final Serializer delegate;
     private final GrpcMetaDataConverter metaDataConverter;
@@ -46,17 +50,17 @@ class GrpcMetaDataAwareSerializer implements Serializer {
     }
 
     @Override
-    public <T> SerializedObject<T> serialize(Object object, Class<T> expectedRepresentation) {
+    public <T> SerializedObject<T> serialize(Object object, @Nonnull Class<T> expectedRepresentation) {
         return delegate.serialize(object, expectedRepresentation);
     }
 
     @Override
-    public <T> boolean canSerializeTo(Class<T> expectedRepresentation) {
+    public <T> boolean canSerializeTo(@Nonnull Class<T> expectedRepresentation) {
         return delegate.canSerializeTo(expectedRepresentation);
     }
 
     @Override
-    public <S, T> T deserialize(SerializedObject<S> serializedObject) {
+    public <S, T> T deserialize(@Nonnull SerializedObject<S> serializedObject) {
         if (Map.class.equals(serializedObject.getContentType())) {
             // this is the MetaDataMap, deserialize differently
             //noinspection unchecked
@@ -69,7 +73,7 @@ class GrpcMetaDataAwareSerializer implements Serializer {
     }
 
     @Override
-    public Class classForType(SerializedType type) {
+    public Class classForType(@Nonnull SerializedType type) {
         return delegate.classForType(type);
     }
 
@@ -81,5 +85,22 @@ class GrpcMetaDataAwareSerializer implements Serializer {
     @Override
     public Converter getConverter() {
         return delegate.getConverter();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof GrpcMetaDataAwareSerializer)) {
+            return false;
+        }
+        GrpcMetaDataAwareSerializer that = (GrpcMetaDataAwareSerializer) o;
+        return delegate.equals(that.delegate) && metaDataConverter.equals(that.metaDataConverter);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(delegate, metaDataConverter);
     }
 }

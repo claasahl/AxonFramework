@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,23 @@
 package org.axonframework.messaging.annotation;
 
 import org.axonframework.messaging.Message;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.junit.jupiter.api.*;
 
-import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
+import jakarta.annotation.Nonnull;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Test class validating the {@link HandlerComparator}.
+ */
 class HandlerComparatorTest {
 
     private MessageHandlingMember<?> stringHandler;
@@ -39,6 +41,8 @@ class HandlerComparatorTest {
     private MessageHandlingMember<?> longHandler;
     private MessageHandlingMember<?> numberHandler;
     private MessageHandlingMember<?> priorityHandler;
+    private MessageHandlingMember<?> stringHandlerReversedOrder;
+    private MessageHandlingMember<?> objectHandlerReversedOrder;
 
     private Comparator<MessageHandlingMember<?>> testSubject;
 
@@ -49,12 +53,32 @@ class HandlerComparatorTest {
         longHandler = new StubMessageHandlingMember(Long.class, 0);
         numberHandler = new StubMessageHandlingMember(Number.class, 0);
         priorityHandler = new StubMessageHandlingMember(Object.class, 1);
+        stringHandlerReversedOrder = new ReversedOrderMessageHandlingMember(String.class, 0);
+        objectHandlerReversedOrder = new ReversedOrderMessageHandlingMember(Object.class, 0);
 
         testSubject = HandlerComparator.instance();
     }
 
+    @RepeatedTest(10)
+    void handlerOrderIsDeterministic() {
+        List<MessageHandlingMember<?>> handlers = new ArrayList<>(Arrays.asList(
+                stringHandler, objectHandler, longHandler, numberHandler, priorityHandler, stringHandlerReversedOrder,
+                objectHandlerReversedOrder
+        ));
+        ArrayList<MessageHandlingMember<?>> handlers1 = new ArrayList<>(handlers);
+        ArrayList<MessageHandlingMember<?>> handlers2 = new ArrayList<>(handlers);
+
+        Collections.shuffle(handlers1, ThreadLocalRandom.current());
+        Collections.shuffle(handlers2, ThreadLocalRandom.current());
+
+        handlers1.sort(testSubject);
+        handlers2.sort(testSubject);
+
+        assertEquals(handlers1, handlers2);
+    }
+
     @Test
-    void testSubclassesBeforeSuperclasses() {
+    void subclassesBeforeSuperclasses() {
         assertTrue(testSubject.compare(stringHandler, objectHandler) < 0, "String should appear before Object");
         assertTrue(testSubject.compare(objectHandler, stringHandler) > 0, "String should appear before Object");
 
@@ -68,8 +92,9 @@ class HandlerComparatorTest {
         assertTrue(testSubject.compare(objectHandler, longHandler) > 0, "Long should appear before Object");
     }
 
+    @SuppressWarnings("EqualsWithItself")
     @Test
-    void testHandlersIsEqualWithItself() {
+    void handlersIsEqualWithItself() {
         assertEquals(0, testSubject.compare(stringHandler, stringHandler));
         assertEquals(0, testSubject.compare(objectHandler, objectHandler));
         assertEquals(0, testSubject.compare(longHandler, longHandler));
@@ -85,8 +110,11 @@ class HandlerComparatorTest {
     }
 
     @Test
-    void testHandlersSortedCorrectly() {
-        List<MessageHandlingMember<?>> members = new ArrayList<>(Arrays.asList(objectHandler, numberHandler, stringHandler, longHandler));
+    void handlersSortedCorrectly() {
+        List<MessageHandlingMember<?>> members = new ArrayList<>(Arrays.asList(objectHandler,
+                                                                               numberHandler,
+                                                                               stringHandler,
+                                                                               longHandler));
 
         members.sort(this.testSubject);
         assertTrue(members.indexOf(longHandler) < members.indexOf(numberHandler));
@@ -94,45 +122,45 @@ class HandlerComparatorTest {
     }
 
     @Test
-    void testNotInSameHierarchyUsesPriorityBasedEvaluation() {
-        assertTrue(testSubject.compare(priorityHandler, stringHandler) < 0, "priorityHandler should appear before String based on priority");
-        assertTrue(testSubject.compare(stringHandler, priorityHandler) > 0, "priorityHandler should appear before String based on priority");
+    void notInSameHierarchyUsesPriorityBasedEvaluation() {
+        assertTrue(testSubject.compare(priorityHandler, stringHandler) < 0,
+                   "priorityHandler should appear before String based on priority");
+        assertTrue(testSubject.compare(stringHandler, priorityHandler) > 0,
+                   "priorityHandler should appear before String based on priority");
     }
 
-    private static class StubMessageHandlingMember implements MessageHandlingMember<Object> {
+    @Test
+    void handlingMembersImplementingReversedOrderHaveThereOrderReversedAmongOneAnother() {
+        assertTrue(testSubject.compare(stringHandlerReversedOrder, objectHandler) < 0,
+                   "Reversed-order-String handler should appear before Object handler");
+        assertTrue(testSubject.compare(objectHandler, stringHandlerReversedOrder) > 0,
+                   "Reversed-order-String handler should appear before Object handler");
+        assertTrue(testSubject.compare(objectHandlerReversedOrder, stringHandler) < 0,
+                   "Reversed-order-Object handler should appear before String handler ");
+        assertTrue(testSubject.compare(stringHandler, objectHandlerReversedOrder) > 0,
+                   "Reversed-order-Object handler should appear before String handler ");
+        assertTrue(testSubject.compare(stringHandlerReversedOrder, objectHandlerReversedOrder) > 0,
+                   "Reversed-order-Object handler should appear before reversed-order-String handler");
+        assertTrue(testSubject.compare(objectHandlerReversedOrder, stringHandlerReversedOrder) < 0,
+                   "Reversed-order-Object handler should appear before reversed-order-String handler");
+    }
 
-        private final Class<?> payloadType;
-        private final int priority;
-
-        StubMessageHandlingMember(Class<?> payloadType, int priority) {
-
-            this.payloadType = payloadType;
-            this.priority = priority;
-        }
-
-        @Override
-        public Class<?> payloadType() {
-            return payloadType;
-        }
-
-        @Override
-        public int priority() {
-            return priority;
-        }
+    private record StubMessageHandlingMember(Class<?> payloadType, int priority)
+            implements MessageHandlingMember<Object> {
 
         @Override
-        public boolean canHandle(Message<?> message) {
+        public boolean canHandle(@Nonnull Message<?> message, @Nonnull ProcessingContext context) {
             throw new UnsupportedOperationException("Not implemented yet");
         }
 
         @Override
         @SuppressWarnings("rawtypes")
-        public boolean canHandleMessageType(Class<? extends Message> messageType) {
+        public boolean canHandleMessageType(@Nonnull Class<? extends Message> messageType) {
             throw new UnsupportedOperationException("Not implemented (yet)");
         }
 
         @Override
-        public Object handle(Message<?> message, Object target) {
+        public Object handleSync(@Nonnull Message<?> message, @Nonnull ProcessingContext context, Object target) {
             throw new UnsupportedOperationException("Not implemented yet");
         }
 
@@ -142,13 +170,55 @@ class HandlerComparatorTest {
         }
 
         @Override
-        public Optional<Map<String, Object>> annotationAttributes(Class<? extends Annotation> annotationType) {
+        public <R> Optional<R> attribute(String attributeKey) {
             return Optional.empty();
         }
 
         @Override
-        public boolean hasAnnotation(Class<? extends Annotation> annotationType) {
-            return false;
+        public String toString() {
+            return "Handler {" +
+                    payloadType +
+                    ", p=" + priority +
+                    '}';
+        }
+    }
+
+    private record ReversedOrderMessageHandlingMember(Class<?> payloadType, int priority)
+            implements MessageHandlingMember<Object> {
+
+        @Override
+        public boolean canHandle(@Nonnull Message<?> message, @Nonnull ProcessingContext context) {
+            throw new UnsupportedOperationException("Not implemented yet");
+        }
+
+        @Override
+        @SuppressWarnings("rawtypes")
+        public boolean canHandleMessageType(@Nonnull Class<? extends Message> messageType) {
+            throw new UnsupportedOperationException("Not implemented (yet)");
+        }
+
+        @Override
+        public Object handleSync(@Nonnull Message<?> message, @Nonnull ProcessingContext context, Object target) {
+            throw new UnsupportedOperationException("Not implemented yet");
+        }
+
+        @Override
+        public <HT> Optional<HT> unwrap(Class<HT> handlerType) {
+            return Optional.empty();
+        }
+
+        @Override
+        public <R> Optional<R> attribute(String attributeKey) {
+            //noinspection unchecked
+            return "ResultHandler.resultType".equals(attributeKey) ? Optional.of((R) Object.class) : Optional.empty();
+        }
+
+        @Override
+        public String toString() {
+            return "ResultHandler {" +
+                    payloadType +
+                    ", p=" + priority +
+                    '}';
         }
     }
 }

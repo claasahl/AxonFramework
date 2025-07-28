@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,15 @@
 
 package org.axonframework.eventhandling;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.Registration;
-import org.axonframework.common.io.IOUtils;
 import org.axonframework.common.transaction.NoTransactionManager;
 import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
-import org.axonframework.lifecycle.StartHandler;
+import org.axonframework.messaging.MessageHandlerInterceptor;
 import org.axonframework.messaging.SubscribableMessageSource;
-import org.axonframework.messaging.unitofwork.BatchingUnitOfWork;
-import org.axonframework.messaging.unitofwork.RollbackConfiguration;
-import org.axonframework.messaging.unitofwork.RollbackConfigurationType;
+import org.axonframework.messaging.unitofwork.TransactionalUnitOfWorkFactory;
 import org.axonframework.monitoring.MessageMonitor;
 import org.axonframework.monitoring.NoOpMessageMonitor;
 
@@ -46,54 +43,72 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * @author Rene de Waele
  * @since 3.0
  */
-public class SubscribingEventProcessor extends AbstractEventProcessor {
+public class SubscribingEventProcessor implements EventProcessor {
 
     private final SubscribableMessageSource<? extends EventMessage<?>> messageSource;
     private final EventProcessingStrategy processingStrategy;
-    private final TransactionManager transactionManager;
+    private final TransactionalUnitOfWorkFactory transactionalUnitOfWorkFactory;
+    private final EventProcessorOperations eventProcessorOperations;
 
     private volatile Registration eventBusRegistration;
 
     /**
-     * Instantiate a Builder to be able to create a {@link SubscribingEventProcessor}.
-     * <p>
-     * The {@link RollbackConfigurationType} defaults to a {@link RollbackConfigurationType#ANY_THROWABLE}, the
-     * {@link ErrorHandler} is defaulted to a {@link PropagatingErrorHandler}, the {@link MessageMonitor} defaults to a
-     * {@link NoOpMessageMonitor}, the {@link EventProcessingStrategy} defaults to a
-     * {@link DirectEventProcessingStrategy} and the {@link TransactionManager} defaults to the
-     * {@link NoTransactionManager#INSTANCE}. The Event Processor {@code name}, {@link EventHandlerInvoker} and
-     * {@link SubscribableMessageSource} are <b>hard requirements</b> and as such should be provided.
-     *
-     * @return a Builder to be able to create a {@link SubscribingEventProcessor}
-     */
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    /**
-     * Instantiate a {@link SubscribingEventProcessor} based on the fields contained in the {@link Builder}.
+     * Instantiate a {@code SubscribingEventProcessor} based on the fields contained in the {@link Builder}.
      * <p>
      * Will assert that the Event Processor {@code name}, {@link EventHandlerInvoker} and
      * {@link SubscribableMessageSource} are not {@code null}, and will throw an {@link AxonConfigurationException} if
      * any of them is {@code null}.
      *
-     * @param builder the {@link Builder} used to instantiate a {@link SubscribingEventProcessor} instance
+     * @param builder the {@link Builder} used to instantiate a {@code SubscribingEventProcessor} instance
      */
     protected SubscribingEventProcessor(Builder builder) {
-        super(builder);
+        builder.validate();
         this.messageSource = builder.messageSource;
         this.processingStrategy = builder.processingStrategy;
-        this.transactionManager = builder.transactionManager;
+        this.transactionalUnitOfWorkFactory = new TransactionalUnitOfWorkFactory(builder.transactionManager);
+        this.eventProcessorOperations = new EventProcessorOperations.Builder()
+                .name(builder.name())
+                .eventHandlingComponent(builder.eventHandlingComponent())
+                .errorHandler(builder.errorHandler())
+                .spanFactory(builder.spanFactory())
+                .messageMonitor(builder.messageMonitor())
+                .build();
+    }
+
+    /**
+     * Instantiate a Builder to be able to create a {@code SubscribingEventProcessor}.
+     * <p>
+     * {@link ErrorHandler} is defaulted to a {@link PropagatingErrorHandler}, the {@link MessageMonitor} defaults to a
+     * {@link NoOpMessageMonitor}, the {@link EventProcessingStrategy} defaults to a
+     * {@link DirectEventProcessingStrategy}, the {@link EventProcessorSpanFactory} defaults to a
+     * {@link DefaultEventProcessorSpanFactory} backed by a {@link org.axonframework.tracing.NoOpSpanFactory}, and the
+     * {@link TransactionManager} defaults to the {@link NoTransactionManager#INSTANCE}. The Event Processor
+     * {@code name}, {@link EventHandlerInvoker} and {@link SubscribableMessageSource} are <b>hard requirements</b> and
+     * as such should be provided.
+     *
+     * @return a Builder to be able to create a {@code SubscribingEventProcessor}
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    @Override
+    public String getName() {
+        return eventProcessorOperations.name();
+    }
+
+    @Override
+    public List<MessageHandlerInterceptor<? super EventMessage<?>>> getHandlerInterceptors() {
+        return eventProcessorOperations.handlerInterceptors();
     }
 
     /**
      * Start this processor. This will register the processor with the {@link EventBus}.
      * <p>
-     * Upon start up of an application, this method will be invoked in the {@link Phase#LOCAL_MESSAGE_HANDLER_REGISTRATIONS}
-     * phase.
+     * Upon start up of an application, this method will be invoked in the
+     * {@link Phase#LOCAL_MESSAGE_HANDLER_REGISTRATIONS} phase.
      */
     @Override
-    @StartHandler(phase = Phase.LOCAL_MESSAGE_HANDLER_REGISTRATIONS)
     public void start() {
         if (eventBusRegistration != null) {
             // This event processor has already been started
@@ -101,6 +116,17 @@ public class SubscribingEventProcessor extends AbstractEventProcessor {
         }
         eventBusRegistration =
                 messageSource.subscribe(eventMessages -> processingStrategy.handle(eventMessages, this::process));
+    }
+
+    @Override
+    public boolean isRunning() {
+        return eventBusRegistration != null;
+    }
+
+    @Override
+    public boolean isError() {
+        // this implementation will never stop because of an error
+        return false;
     }
 
     /**
@@ -112,9 +138,8 @@ public class SubscribingEventProcessor extends AbstractEventProcessor {
      */
     protected void process(List<? extends EventMessage<?>> eventMessages) {
         try {
-            BatchingUnitOfWork<? extends EventMessage<?>> unitOfWork = new BatchingUnitOfWork<>(eventMessages);
-            unitOfWork.attachTransaction(transactionManager);
-            processInUnitOfWork(eventMessages, unitOfWork);
+            var unitOfWork = transactionalUnitOfWorkFactory.create();
+            eventProcessorOperations.processInUnitOfWork(eventMessages, unitOfWork);
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -125,13 +150,14 @@ public class SubscribingEventProcessor extends AbstractEventProcessor {
     /**
      * Shut down this processor. This will deregister the processor with the {@link EventBus}.
      * <p>
-     * Upon shutdown of an application, this method will be invoked in the {@link Phase#LOCAL_MESSAGE_HANDLER_REGISTRATIONS}
-     * phase.
+     * Upon shutdown of an application, this method will be invoked in the
+     * {@link Phase#LOCAL_MESSAGE_HANDLER_REGISTRATIONS} phase.
      */
     @Override
-    @ShutdownHandler(phase = Phase.LOCAL_MESSAGE_HANDLER_REGISTRATIONS)
     public void shutDown() {
-        IOUtils.closeQuietly(eventBusRegistration);
+        if (eventBusRegistration != null) {
+            eventBusRegistration.cancel();
+        }
         eventBusRegistration = null;
     }
 
@@ -144,56 +170,66 @@ public class SubscribingEventProcessor extends AbstractEventProcessor {
         return messageSource;
     }
 
+    @Override
+    public Registration registerHandlerInterceptor(
+            @Nonnull MessageHandlerInterceptor<? super EventMessage<?>> handlerInterceptor) {
+        return eventProcessorOperations.registerHandlerInterceptor(handlerInterceptor);
+    }
+
     /**
      * Builder class to instantiate a {@link SubscribingEventProcessor}.
      * <p>
-     * The {@link RollbackConfigurationType} defaults to a {@link RollbackConfigurationType#ANY_THROWABLE}, the
      * {@link ErrorHandler} is defaulted to a {@link PropagatingErrorHandler}, the {@link MessageMonitor} defaults to a
+     * {@link EventProcessorSpanFactory} is defaulted to a {@link DefaultEventProcessorSpanFactory} backed by a
+     * {@link org.axonframework.tracing.NoOpSpanFactory}, the {@link MessageMonitor} defaults to a
      * {@link NoOpMessageMonitor}, the {@link EventProcessingStrategy} defaults to a
      * {@link DirectEventProcessingStrategy} and the {@link TransactionManager} defaults to the
      * {@link NoTransactionManager#INSTANCE}. The Event Processor {@code name}, {@link EventHandlerInvoker} and
      * {@link SubscribableMessageSource} are <b>hard requirements</b> and as such should be provided.
      */
-    public static class Builder extends AbstractEventProcessor.Builder {
+    public static class Builder extends EventProcessorBuilder {
 
         private SubscribableMessageSource<? extends EventMessage<?>> messageSource;
         private EventProcessingStrategy processingStrategy = DirectEventProcessingStrategy.INSTANCE;
         private TransactionManager transactionManager = NoTransactionManager.INSTANCE;
 
         public Builder() {
-            super.rollbackConfiguration(RollbackConfigurationType.ANY_THROWABLE);
+            super();
         }
 
         @Override
-        public Builder name(String name) {
+        public Builder name(@Nonnull String name) {
             super.name(name);
             return this;
         }
 
         @Override
-        public Builder eventHandlerInvoker(EventHandlerInvoker eventHandlerInvoker) {
+        public Builder eventHandlerInvoker(@Nonnull EventHandlerInvoker eventHandlerInvoker) {
             super.eventHandlerInvoker(eventHandlerInvoker);
             return this;
         }
 
-        /**
-         * {@inheritDoc}. Defaults to a {@link RollbackConfigurationType#ANY_THROWABLE})
-         */
         @Override
-        public Builder rollbackConfiguration(RollbackConfiguration rollbackConfiguration) {
-            super.rollbackConfiguration(rollbackConfiguration);
+        public Builder eventHandlingComponent(@Nonnull EventHandlingComponent eventHandlingComponent) {
+            super.eventHandlingComponent(eventHandlingComponent);
             return this;
         }
 
         @Override
-        public Builder errorHandler(ErrorHandler errorHandler) {
+        public Builder errorHandler(@Nonnull ErrorHandler errorHandler) {
             super.errorHandler(errorHandler);
             return this;
         }
 
         @Override
-        public Builder messageMonitor(MessageMonitor<? super EventMessage<?>> messageMonitor) {
+        public Builder messageMonitor(@Nonnull MessageMonitor<? super EventMessage<?>> messageMonitor) {
             super.messageMonitor(messageMonitor);
+            return this;
+        }
+
+        @Override
+        public Builder spanFactory(@Nonnull EventProcessorSpanFactory spanFactory) {
+            super.spanFactory(spanFactory);
             return this;
         }
 
@@ -206,7 +242,7 @@ public class SubscribingEventProcessor extends AbstractEventProcessor {
          *                      {@link EventMessage}s
          * @return the current Builder instance, for fluent interfacing
          */
-        public Builder messageSource(SubscribableMessageSource<? extends EventMessage<?>> messageSource) {
+        public Builder messageSource(@Nonnull SubscribableMessageSource<? extends EventMessage<?>> messageSource) {
             assertNonNull(messageSource, "SubscribableMessageSource may not be null");
             this.messageSource = messageSource;
             return this;
@@ -220,7 +256,7 @@ public class SubscribingEventProcessor extends AbstractEventProcessor {
          *                           directly or asynchronously
          * @return the current Builder instance, for fluent interfacing
          */
-        public Builder processingStrategy(EventProcessingStrategy processingStrategy) {
+        public Builder processingStrategy(@Nonnull EventProcessingStrategy processingStrategy) {
             assertNonNull(processingStrategy, "EventProcessingStrategy may not be null");
             this.processingStrategy = processingStrategy;
             return this;
@@ -232,8 +268,8 @@ public class SubscribingEventProcessor extends AbstractEventProcessor {
          * @param transactionManager the {@link TransactionManager} used when processing {@link EventMessage}s
          * @return the current Builder instance, for fluent interfacing
          */
-        public Builder transactionManager(TransactionManager transactionManager) {
-            assertNonNull(processingStrategy, "TransactionManager may not be null");
+        public Builder transactionManager(@Nonnull TransactionManager transactionManager) {
+            assertNonNull(transactionManager, "TransactionManager may not be null");
             this.transactionManager = transactionManager;
             return this;
         }

@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,10 +16,13 @@
 
 package org.axonframework.eventhandling;
 
-import com.fasterxml.jackson.annotation.*;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 import java.beans.ConstructorProperties;
-import java.io.Serializable;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -32,9 +35,7 @@ import java.util.OptionalLong;
  * @author Allard Buijze
  * @since 4.1
  */
-public class MergedTrackingToken implements TrackingToken, Serializable, WrappedToken {
-
-    private static final long serialVersionUID = 382974732408053911L;
+public class MergedTrackingToken implements TrackingToken, WrappedToken {
 
     private final TrackingToken lowerSegmentToken;
     private final TrackingToken upperSegmentToken;
@@ -44,32 +45,47 @@ public class MergedTrackingToken implements TrackingToken, Serializable, Wrapped
 
     /**
      * Initialize a Merged Token, with the {@code lowerSegmentToken} representing the progress of the segment with the
-     * lower segmentId, and {@code upperSegmentToken} representing the progress of the segment with the higher segmentId.
+     * lower segmentId, and {@code upperSegmentToken} representing the progress of the segment with the higher
+     * segmentId.
      *
      * @param lowerSegmentToken the token of the half with the lower segment ID
      * @param upperSegmentToken the token of the half with the higher segment ID
      */
     @JsonCreator
     @ConstructorProperties({"lowerSegmentToken", "upperSegmentToken"})
-    public MergedTrackingToken(
-            @JsonProperty("lowerSegmentToken") TrackingToken lowerSegmentToken,
-            @JsonProperty("upperSegmentToken") TrackingToken upperSegmentToken) {
+    public MergedTrackingToken(@JsonProperty("lowerSegmentToken") TrackingToken lowerSegmentToken,
+                               @JsonProperty("upperSegmentToken") TrackingToken upperSegmentToken) {
         this(lowerSegmentToken, upperSegmentToken, false, false);
     }
 
     /**
+     * Create a merged token using the given {@code lowerSegmentToken} and {@code upperSegmentToken}.
+     *
+     * @param lowerSegmentToken the token of the half with the lower segment ID
+     * @param upperSegmentToken the token of the half with the higher segment ID
+     * @return a token representing the position of the merger of both tokens
+     */
+    public static TrackingToken merged(TrackingToken lowerSegmentToken, TrackingToken upperSegmentToken) {
+        return Objects.equals(lowerSegmentToken, upperSegmentToken)
+                ? lowerSegmentToken
+                : new MergedTrackingToken(lowerSegmentToken, upperSegmentToken);
+    }
+
+    /**
      * Initialize a Merged Token, with the {@code lowerSegmentToken} representing the progress of the segment with the
-     * lower segmentId, and {@code upperSegmentToken} representing the progress of the segment with the higher segmentId,
-     * additionally indicating if either of these segments were advanced by the latest call to
-     * {@link #advancedTo(TrackingToken)}
+     * lower segmentId, and {@code upperSegmentToken} representing the progress of the segment with the higher
+     * segmentId, additionally indicating if either of these segments were advanced by the latest call to {@link
+     * #advancedTo(TrackingToken)}
      *
      * @param lowerSegmentToken    the token of the half with the lower segment ID
      * @param upperSegmentToken    the token of the half with the higher segment ID
      * @param lowerSegmentAdvanced whether the lower segment advanced in the last call
      * @param upperSegmentAdvanced whether the upper segment advanced in the last call
      */
-    protected MergedTrackingToken(TrackingToken lowerSegmentToken, TrackingToken upperSegmentToken,
-                                  boolean lowerSegmentAdvanced, boolean upperSegmentAdvanced) {
+    protected MergedTrackingToken(TrackingToken lowerSegmentToken,
+                                  TrackingToken upperSegmentToken,
+                                  boolean lowerSegmentAdvanced,
+                                  boolean upperSegmentAdvanced) {
         this.lowerSegmentToken = lowerSegmentToken;
         this.upperSegmentToken = upperSegmentToken;
         this.lowerSegmentAdvanced = lowerSegmentAdvanced;
@@ -79,7 +95,7 @@ public class MergedTrackingToken implements TrackingToken, Serializable, Wrapped
     /**
      * Indicates whether the given {@code trackingToken} represents a token that is part of a merge.
      *
-     * @param trackingToken The token to verify
+     * @param trackingToken the token to verify
      * @return {@code true} if the token indicates a merge
      */
     public static boolean isMergeInProgress(TrackingToken trackingToken) {
@@ -87,10 +103,10 @@ public class MergedTrackingToken implements TrackingToken, Serializable, Wrapped
     }
 
     /**
-     * Return the estimated relative token position this Segment will have after a merge operation is complete.
-     * In case no estimation can be given or no merge in progress, an {@code OptionalLong.empty()} will be returned.
+     * Return the estimated relative token position this Segment will have after a merge operation is complete. In case
+     * no estimation can be given or no merge in progress, an {@code OptionalLong.empty()} will be returned.
      *
-     * @return return the estimated relative position this Segment will reach after a merge operation is complete.
+     * @return the estimated relative position this Segment will reach after a merge operation is complete.
      */
     public static OptionalLong mergePosition(TrackingToken trackingToken) {
         return WrappedToken.unwrap(trackingToken, MergedTrackingToken.class)
@@ -121,7 +137,9 @@ public class MergedTrackingToken implements TrackingToken, Serializable, Wrapped
     @Override
     public OptionalLong position() {
         if (lowerSegmentToken.position().isPresent() && upperSegmentToken.position().isPresent()) {
-            return OptionalLong.of(Math.min(lowerSegmentToken.position().getAsLong(), upperSegmentToken.position().getAsLong()));
+            return OptionalLong.of(Math.min(
+                    lowerSegmentToken.position().getAsLong(), upperSegmentToken.position().getAsLong()
+            ));
         }
         return OptionalLong.empty();
     }
@@ -138,8 +156,10 @@ public class MergedTrackingToken implements TrackingToken, Serializable, Wrapped
 
     @Override
     public boolean covers(TrackingToken other) {
-        return lowerSegmentToken.covers(other)
-                && upperSegmentToken.covers(other);
+        if (lowerSegmentToken == null || upperSegmentToken == null) {
+            return other == null;
+        }
+        return lowerSegmentToken.covers(other) && upperSegmentToken.covers(other);
     }
 
     @Override
@@ -148,7 +168,8 @@ public class MergedTrackingToken implements TrackingToken, Serializable, Wrapped
         TrackingToken newUpperSegmentToken = doAdvance(upperSegmentToken, newToken);
         boolean lowerSegmentAdvanced = !Objects.equals(newLowerSegmentToken, lowerSegmentToken);
         boolean upperSegmentAdvanced = !Objects.equals(newUpperSegmentToken, upperSegmentToken);
-        if (lowerSegmentAdvanced && upperSegmentAdvanced && Objects.equals(newLowerSegmentToken, newUpperSegmentToken)) {
+        if (lowerSegmentAdvanced && upperSegmentAdvanced
+                && Objects.equals(newLowerSegmentToken, newUpperSegmentToken)) {
             return newLowerSegmentToken;
         }
         return new MergedTrackingToken(newLowerSegmentToken, newUpperSegmentToken,
@@ -177,7 +198,6 @@ public class MergedTrackingToken implements TrackingToken, Serializable, Wrapped
                 }
             }
         }
-
     }
 
     private TrackingToken doAdvance(TrackingToken currentToken, TrackingToken newToken) {

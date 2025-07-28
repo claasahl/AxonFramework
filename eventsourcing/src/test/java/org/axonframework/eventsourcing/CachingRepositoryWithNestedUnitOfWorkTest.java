@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 
 package org.axonframework.eventsourcing;
 
-import net.sf.ehcache.CacheManager;
-import org.axonframework.modelling.command.Aggregate;
-import org.axonframework.modelling.command.AggregateIdentifier;
+import jakarta.annotation.Nonnull;
 import org.axonframework.common.caching.Cache;
 import org.axonframework.common.caching.EhCacheAdapter;
 import org.axonframework.common.caching.NoCache;
@@ -27,18 +25,29 @@ import org.axonframework.eventhandling.EventMessageHandler;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventhandling.SimpleEventHandlerInvoker;
 import org.axonframework.eventhandling.SubscribingEventProcessor;
-import org.axonframework.eventsourcing.eventstore.EmbeddedEventStore;
-import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.eventsourcing.eventstore.LegacyEmbeddedEventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.eventstore.inmemory.LegacyInMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.jpa.LegacyJpaEventStorageEngine;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.modelling.command.AggregateIdentifier;
+import org.ehcache.CacheManager;
+import org.ehcache.config.CacheConfiguration;
+import org.ehcache.config.builders.CacheConfigurationBuilder;
+import org.ehcache.config.builders.ResourcePoolsBuilder;
+import org.ehcache.core.Ehcache;
+import org.ehcache.core.EhcacheManager;
+import org.ehcache.core.config.DefaultConfiguration;
+import org.junit.jupiter.api.*;
 
-import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -55,9 +64,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p/>
  * Committing a unit of work may result in additional units of work being created -- typically as part of the 'publish
  * event' phase: <ol> <li>A Command is dispatched. <li>A UOW is created, started. <li>The command completes.
- * Aggregate(s) have been loaded and events have been applied. <li>The UOW is comitted: <ol> <li>The aggregate is
+ * Aggregate(s) have been loaded and events have been applied. <li>The UOW is committed: <ol> <li>The aggregate is
  * saved.
- * <li>Events are published on the event bus. <li>Inner UOWs are comitted. <li>AfterCommit listeners are notified.
+ * <li>Events are published on the event bus. <li>Inner UOWs are committed. <li>AfterCommit listeners are notified.
  * </ol>
  * </ol>
  * <p/>
@@ -71,11 +80,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * into the cache, exposing it to subsequent UOWs. The state of the aggregate in any UOW is not guaranteed to be
  * up-to-date. Depending on how UOWs are nested, it may be 'behind' by several events;
  * <p/>
- * Any subsequent UOW (after an aggregate was added to the cache) works on potentially stale data. This manifests
- * itself
- * primarily by events being assigned duplicate sequence numbers. The {@link org.axonframework.eventsourcing.eventstore.jpa.JpaEventStorageEngine}
- * detects this and throws an
- * exception noting that an 'identical' entity has already been persisted.
+ * Any subsequent UOW (after an aggregate was added to the cache) works on potentially stale data. This manifests itself
+ * primarily by events being assigned duplicate sequence numbers. The {@link LegacyJpaEventStorageEngine} detects this
+ * and throws an exception noting that an 'identical' entity has already been persisted.
  * <p/>
  * <p/>
  * <h2>Possible solutions and workarounds contemplated include:</h2>
@@ -95,18 +102,29 @@ import static org.junit.jupiter.api.Assertions.*;
 class CachingRepositoryWithNestedUnitOfWorkTest {
 
     private final List<String> events = new ArrayList<>();
-    private CachingEventSourcingRepository<TestAggregate> repository;
+    private LegacyCachingEventSourcingRepository<TestAggregate> repository;
     private Cache realCache;
     private AggregateFactory<TestAggregate> aggregateFactory;
-    private EventStore eventStore;
+    private LegacyEventStore eventStore;
+    private CacheManager cacheManager;
 
     @BeforeEach
     void setUp() {
-        final CacheManager cacheManager = CacheManager.getInstance();
-        realCache = new EhCacheAdapter(cacheManager.addCacheIfAbsent("name"));
+        Map<String, CacheConfiguration<?, ?>> caches = new HashMap<>();
+        DefaultConfiguration config = new DefaultConfiguration(caches, null);
+        cacheManager = new EhcacheManager(config);
+        cacheManager.init();
+        realCache = new EhCacheAdapter((Ehcache) cacheManager.createCache(
+                "name",
+                CacheConfigurationBuilder
+                        .newCacheConfigurationBuilder(
+                                Object.class,
+                                Object.class,
+                                ResourcePoolsBuilder.heap(100L).build())
+                        .build()));
 
 
-        eventStore = EmbeddedEventStore.builder().storageEngine(new InMemoryEventStorageEngine()).build();
+        eventStore = LegacyEmbeddedEventStore.builder().storageEngine(new LegacyInMemoryEventStorageEngine()).build();
         SimpleEventHandlerInvoker eventHandlerInvoker =
                 SimpleEventHandlerInvoker.builder()
                                          .eventHandlers(new LoggingEventHandler(events))
@@ -122,43 +140,49 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
         aggregateFactory = new GenericAggregateFactory<>(TestAggregate.class);
     }
 
+    @AfterEach
+    void tearDown() {
+        cacheManager.close();
+    }
+
+
     @Test
-    void testWithoutCache() throws Exception {
-        repository = CachingEventSourcingRepository.builder(TestAggregate.class)
-                .aggregateFactory(aggregateFactory)
-                .eventStore(eventStore)
-                .cache(NoCache.INSTANCE)
-                .build();
+    void withoutCache() throws Exception {
+        repository = LegacyCachingEventSourcingRepository.builder(TestAggregate.class)
+                                                         .aggregateFactory(aggregateFactory)
+                                                         .eventStore(eventStore)
+                                                         .cache(NoCache.INSTANCE)
+                                                         .build();
         executeComplexScenario("ComplexWithoutCache");
     }
 
     @Test
-    void testWithCache() throws Exception {
-        repository = CachingEventSourcingRepository.builder(TestAggregate.class)
-                .aggregateFactory(aggregateFactory)
-                .eventStore(eventStore)
-                .cache(realCache)
-                .build();
+    void withCache() throws Exception {
+        repository = LegacyCachingEventSourcingRepository.builder(TestAggregate.class)
+                                                         .aggregateFactory(aggregateFactory)
+                                                         .eventStore(eventStore)
+                                                         .cache(realCache)
+                                                         .build();
         executeComplexScenario("ComplexWithCache");
     }
 
     @Test
-    void testMinimalScenarioWithoutCache() throws Exception {
-        repository = CachingEventSourcingRepository.builder(TestAggregate.class)
-                .aggregateFactory(aggregateFactory)
-                .eventStore(eventStore)
-                .cache(NoCache.INSTANCE)
-                .build();
+    void minimalScenarioWithoutCache() throws Exception {
+        repository = LegacyCachingEventSourcingRepository.builder(TestAggregate.class)
+                                                         .aggregateFactory(aggregateFactory)
+                                                         .eventStore(eventStore)
+                                                         .cache(NoCache.INSTANCE)
+                                                         .build();
         testMinimalScenario("MinimalScenarioWithoutCache");
     }
 
     @Test
-    void testMinimalScenarioWithCache() throws Exception {
-        repository = CachingEventSourcingRepository.builder(TestAggregate.class)
-                .aggregateFactory(aggregateFactory)
-                .eventStore(eventStore)
-                .cache(realCache)
-                .build();
+    void minimalScenarioWithCache() throws Exception {
+        repository = LegacyCachingEventSourcingRepository.builder(TestAggregate.class)
+                                                         .aggregateFactory(aggregateFactory)
+                                                         .eventStore(eventStore)
+                                                         .cache(realCache)
+                                                         .build();
         testMinimalScenario("MinimalScenarioWithCache");
     }
 
@@ -180,7 +204,7 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
                                          .build();
         eventProcessor.start();
 
-        UnitOfWork<?> uow = DefaultUnitOfWork.startAndGet(null);
+        LegacyUnitOfWork<?> uow = LegacyDefaultUnitOfWork.startAndGet(null);
         repository.newInstance(() -> new TestAggregate(id));
         uow.commit();
 
@@ -226,24 +250,24 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
         eventProcessor.start();
 
         // First command: Create Aggregate
-        UnitOfWork<?> uow1 = DefaultUnitOfWork.startAndGet(null);
+        LegacyUnitOfWork<?> uow1 = LegacyDefaultUnitOfWork.startAndGet(null);
         repository.newInstance(() -> new TestAggregate(id));
         uow1.commit();
 
         TestAggregate verify = loadAggregate(id);
 
         assertEquals(id, verify.id);
-        assertTrue(verify.tokens.containsAll(asList(//
-                                                    "UOW3", "UOW4", "UOW5", "UOW6", "UOW7", "UOW8", "UOW9")));
+        assertTrue(verify.tokens.containsAll(asList("UOW3", "UOW4", "UOW5", "UOW6", "UOW7", "UOW8", "UOW9")));
         assertFalse(verify.tokens.contains("UOW10"));
         assertEquals(7, verify.tokens.size());
         for (int i = 0; i < verify.tokens.size(); i++) {
-            assertTrue(events.get(i).startsWith(i + " "), "Expected event with sequence number " + i + " but got :" + events.get(i));
+            assertTrue(events.get(i).startsWith(i + " "),
+                       "Expected event with sequence number " + i + " but got :" + events.get(i));
         }
     }
 
     private TestAggregate loadAggregate(String id) {
-        UnitOfWork<?> uow = DefaultUnitOfWork.startAndGet(null);
+        LegacyUnitOfWork<?> uow = LegacyDefaultUnitOfWork.startAndGet(null);
         Aggregate<TestAggregate> verify = repository.load(id);
         uow.rollback();
         return verify.invoke(Function.identity());
@@ -262,7 +286,7 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
 
         @SuppressWarnings("rawtypes")
         @Override
-        public Object handle(EventMessage event) {
+        public Object handleSync(@Nonnull EventMessage event, @Nonnull ProcessingContext context) {
             GenericDomainEventMessage e = (GenericDomainEventMessage) event;
             String str = String.format("%d - %s(%s) ID %s %s", //
                                        e.getSequenceNumber(), //
@@ -279,7 +303,7 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
      * Domain Model
      */
 
-    public static class AggregateCreatedEvent implements Serializable {
+    public static class AggregateCreatedEvent {
 
         @AggregateIdentifier
         private final String id;
@@ -294,7 +318,7 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
         }
     }
 
-    public static class AggregateUpdatedEvent implements Serializable {
+    public static class AggregateUpdatedEvent {
 
         @AggregateIdentifier
         private final String id;
@@ -311,7 +335,7 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
         }
     }
 
-    public static class TestAggregate implements Serializable {
+    public static class TestAggregate {
 
         @AggregateIdentifier
         public String id;
@@ -357,14 +381,14 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
         }
 
         @Override
-        public Object handle(EventMessage<?> event) {
+        public Object handleSync(@Nonnull EventMessage<?> event, @Nonnull ProcessingContext context) {
             Object payload = event.getPayload();
 
             if (previousToken == null && payload instanceof AggregateCreatedEvent) {
                 AggregateCreatedEvent created = (AggregateCreatedEvent) payload;
 
-                UnitOfWork<EventMessage<?>> nested = DefaultUnitOfWork.startAndGet(event);
-                nested.execute(() -> {
+                LegacyUnitOfWork<EventMessage<?>> nested = LegacyDefaultUnitOfWork.startAndGet(event);
+                nested.execute((ctx) -> {
                     Aggregate<TestAggregate> aggregate = repository.load(created.id);
                     aggregate.execute(r -> r.update(token));
                 });
@@ -373,9 +397,9 @@ class CachingRepositoryWithNestedUnitOfWorkTest {
             if (previousToken != null && payload instanceof AggregateUpdatedEvent) {
                 AggregateUpdatedEvent updated = (AggregateUpdatedEvent) payload;
                 if (updated.token.equals(previousToken)) {
-                    UnitOfWork<EventMessage<?>> nested = DefaultUnitOfWork.startAndGet(event);
+                    LegacyUnitOfWork<EventMessage<?>> nested = LegacyDefaultUnitOfWork.startAndGet(event);
                     if (commit) {
-                        nested.execute(() -> {
+                        nested.execute((ctx) -> {
                             Aggregate<TestAggregate> aggregate = repository.load(updated.id);
                             aggregate.execute(r -> r.update(token));
                         });

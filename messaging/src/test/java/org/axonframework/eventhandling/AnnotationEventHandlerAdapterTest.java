@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,12 @@
 package org.axonframework.eventhandling;
 
 import org.axonframework.common.AxonException;
+import org.axonframework.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.InterceptorChain;
+import org.axonframework.messaging.MessageTypeResolver;
 import org.axonframework.messaging.MetaData;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.annotation.MetaDataValue;
 import org.axonframework.messaging.annotation.MultiParameterResolverFactory;
@@ -26,13 +30,14 @@ import org.axonframework.messaging.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.annotation.SimpleResourceParameterResolverFactory;
 import org.axonframework.messaging.interceptors.ExceptionHandler;
 import org.axonframework.messaging.interceptors.MessageHandlerInterceptor;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import static java.util.Collections.singletonList;
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
+import static org.axonframework.eventhandling.EventTestUtils.asEventMessage;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -45,6 +50,7 @@ class AnnotationEventHandlerAdapterTest {
     private SomeHandler annotatedEventListener;
     private ParameterResolverFactory parameterResolverFactory;
     private AnnotationEventHandlerAdapter testSubject;
+    private final MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
     @BeforeEach
     void setUp() {
@@ -53,42 +59,51 @@ class AnnotationEventHandlerAdapterTest {
                 ClasspathParameterResolverFactory.forClass(getClass()),
                 new SimpleResourceParameterResolverFactory(singletonList(new SomeResource()))
         );
-        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener, parameterResolverFactory);
+        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener,
+                                                        parameterResolverFactory,
+                                                        messageTypeResolver);
     }
 
     @Test
-    void testInvokeResetHandler() {
-        testSubject.prepareReset();
+    void invokeResetHandler() {
+        testSubject.prepareReset(new StubProcessingContext());
 
         assertTrue(annotatedEventListener.invocations.contains("reset"));
     }
 
     @Test
-    void testInvokeResetHandlerWithResetContext() {
-        testSubject.prepareReset("resetContext");
+    void invokeResetHandlerWithResetContext() {
+        testSubject.prepareReset("resetContext", new StubProcessingContext());
 
         assertTrue(annotatedEventListener.invocations.contains("resetWithContext"));
     }
 
     @Test
-    void testHandlerInterceptors() throws Exception {
+    void handlerInterceptors() throws Exception {
         SomeHandler annotatedEventListener = new SomeInterceptingHandler();
-        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener, parameterResolverFactory);
+        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener,
+                                                        parameterResolverFactory,
+                                                        messageTypeResolver);
 
-        testSubject.handle(asEventMessage("count"));
+        EventMessage<Object> eventMessage = asEventMessage("count");
+        testSubject.handleSync(eventMessage, StubProcessingContext.forMessage(eventMessage));
         assertEquals(3, annotatedEventListener.invocations.stream().filter("count"::equals).count());
     }
 
     @Test
-    void testWrapExceptionInResultInterceptor() {
+    @Disabled("TODO #3062 - Exception Handler support")
+    void wrapExceptionInResultInterceptor() {
         EventMessage<Object> testEventMessage =
                 asEventMessage("testing").andMetaData(MetaData.with("key", "value"));
+        ProcessingContext context = StubProcessingContext.forMessage(testEventMessage);
 
         SomeExceptionHandler annotatedEventListener = new SomeExceptionHandler();
-        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener, parameterResolverFactory);
+        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener,
+                                                        parameterResolverFactory,
+                                                        messageTypeResolver);
 
         try {
-            testSubject.handle(testEventMessage);
+            testSubject.handleSync(testEventMessage, context);
             fail("Expected exception");
         } catch (Exception e) {
             assertEquals(RuntimeException.class, e.getClass());
@@ -99,15 +114,18 @@ class AnnotationEventHandlerAdapterTest {
     }
 
     @Test
-    void testMismatchingExceptionTypeFromHandlerIgnored() {
+    void mismatchingExceptionTypeFromHandlerIgnored() {
         EventMessage<Object> testEventMessage =
                 asEventMessage("testing").andMetaData(MetaData.with("key", "value"));
+        ProcessingContext context = StubProcessingContext.forMessage(testEventMessage);
 
         SomeMismatchingExceptionHandler annotatedEventListener = new SomeMismatchingExceptionHandler();
-        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener, parameterResolverFactory);
+        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener,
+                                                        parameterResolverFactory,
+                                                        messageTypeResolver);
 
         try {
-            testSubject.handle(testEventMessage);
+            testSubject.handleSync(testEventMessage, context);
             fail("Expected exception");
         } catch (Exception e) {
             assertEquals(IllegalArgumentException.class, e.getClass());
@@ -116,14 +134,41 @@ class AnnotationEventHandlerAdapterTest {
     }
 
     @Test
-    void testCanHandleTypeDoesNotReturnResetHandlers() {
+    void canHandleTypeDoesNotReturnResetHandlers() {
         SomeResetHandlerWithContext annotatedEventListener = new SomeResetHandlerWithContext();
-        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener, parameterResolverFactory);
+        testSubject = new AnnotationEventHandlerAdapter(annotatedEventListener,
+                                                        parameterResolverFactory,
+                                                        messageTypeResolver);
 
         assertTrue(testSubject.canHandleType(Long.class));
         assertFalse(testSubject.canHandleType(String.class));
         assertFalse(testSubject.canHandleType(Integer.class));
     }
+
+    @Test
+    void replayNotSupportedOnSingleHandler() {
+        SingleReplayBlockingHandler handler = new SingleReplayBlockingHandler();
+        testSubject = new AnnotationEventHandlerAdapter(handler, parameterResolverFactory, messageTypeResolver);
+
+        assertTrue(testSubject.supportsReset());
+    }
+
+    @Test
+    void replayNotSupportedOnClassLevel() {
+        ReplayBlockedOnClassLevelHandler handler = new ReplayBlockedOnClassLevelHandler();
+        testSubject = new AnnotationEventHandlerAdapter(handler, parameterResolverFactory, messageTypeResolver);
+
+        assertFalse(testSubject.supportsReset());
+    }
+
+    @Test
+    void replayNotSupportedOnClassLevelWithHandlerLevelOverride() {
+        ReplayBlockedOnClassLevelWithReplayCapableHandler handler = new ReplayBlockedOnClassLevelWithReplayCapableHandler();
+        testSubject = new AnnotationEventHandlerAdapter(handler, parameterResolverFactory, messageTypeResolver);
+
+        assertTrue(testSubject.supportsReset());
+    }
+
 
     @SuppressWarnings("unused")
     private static class SomeHandler {
@@ -193,9 +238,9 @@ class AnnotationEventHandlerAdapterTest {
     public static class SomeInterceptingHandler extends SomeHandler {
 
         @MessageHandlerInterceptor
-        public void intercept(String event, InterceptorChain chain) throws Exception {
+        public void intercept(String event, ProcessingContext context, InterceptorChain chain) throws Exception {
             invocations.add(event);
-            chain.proceed();
+            chain.proceedSync(context);
         }
 
         @MessageHandlerInterceptor
@@ -222,6 +267,53 @@ class AnnotationEventHandlerAdapterTest {
             // No-op
         }
     }
+
+    public static class SingleReplayBlockingHandler {
+
+        @EventHandler
+        public void handle(Long event) {
+            // No-op
+        }
+
+        @DisallowReplay
+        @EventHandler
+        public void handle(String event) {
+            // No-op
+        }
+
+    }
+
+    @DisallowReplay
+    public static class ReplayBlockedOnClassLevelHandler {
+
+        @EventHandler
+        public void handle(Long event) {
+            // No-op
+        }
+
+        @EventHandler
+        public void handle(String event) {
+            // No-op
+        }
+
+    }
+
+    @DisallowReplay
+    public static class ReplayBlockedOnClassLevelWithReplayCapableHandler {
+
+        @EventHandler
+        public void handle(Long event) {
+            // No-op
+        }
+
+        @AllowReplay
+        @EventHandler
+        public void handle(String event) {
+            // No-op
+        }
+
+    }
+
 
     private static class SomeResource {
         // Test resource to be resolved as message handling parameter

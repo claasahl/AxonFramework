@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +21,7 @@ import org.axonframework.common.lock.Lock;
 import org.axonframework.common.lock.LockFactory;
 import org.axonframework.common.lock.PessimisticLockFactory;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.axonframework.modelling.saga.Saga;
 import org.axonframework.modelling.saga.SagaRepository;
 
@@ -56,7 +56,7 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
      * {@inheritDoc}
      * <p>
      * This implementation locks access to sagas with the given {@code sagaIdentifier} and releases the lock in the
-     * clean-up phase of the current {@link UnitOfWork}.
+     * clean-up phase of the current {@link LegacyUnitOfWork}.
      */
     @Override
     public Saga<T> load(String sagaIdentifier) {
@@ -68,7 +68,7 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
      * {@inheritDoc}
      * <p>
      * This implementation locks access to sagas with the given {@code sagaIdentifier} and releases the lock in the
-     * clean-up phase of the current {@link UnitOfWork}.
+     * clean-up phase of the current {@link LegacyUnitOfWork}.
      */
     @Override
     public Saga<T> createInstance(String sagaIdentifier, Supplier<T> factoryMethod) {
@@ -77,16 +77,15 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
     }
 
     private void lockSagaAccess(String sagaIdentifier) {
-        UnitOfWork<?> unitOfWork = CurrentUnitOfWork.get();
+        LegacyUnitOfWork<?> unitOfWork = CurrentUnitOfWork.get();
         Lock lock = lockFactory.obtainLock(sagaIdentifier);
         unitOfWork.root().onCleanup(u -> lock.release());
     }
 
     /**
-     * Loads a known Saga instance by its unique identifier.
-     * Due to the concurrent nature of Sagas, it is not unlikely for a Saga to have ceased to exist after it has been
-     * found based on associations. Therefore, a repository should return {@code null} in case a Saga doesn't
-     * exists, as opposed to throwing an exception.
+     * Loads a known Saga instance by its unique identifier. Due to the concurrent nature of Sagas, it is not unlikely
+     * for a Saga to have ceased to exist after it has been found based on associations. Therefore, a repository should
+     * return {@code null} in case a Saga doesn't exists, as opposed to throwing an exception.
      *
      * @param sagaIdentifier The unique identifier of the Saga to load
      * @return The Saga instance, or {@code null} if no such saga exists
@@ -106,8 +105,8 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
     /**
      * Abstract Builder class to instantiate {@link LockingSagaRepository} implementations.
      * <p>
-     * The {@link LockFactory} is defaulted to a pessimistic locking strategy, implemented in the
-     * {@link PessimisticLockFactory}.
+     * The {@link LockFactory} is defaulted to a pessimistic locking strategy, implemented in the {@link
+     * PessimisticLockFactory}.
      *
      * @param <T> a generic specifying the Saga type contained in this {@link SagaRepository} implementation
      */
@@ -135,7 +134,7 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
          *                                    specifications
          */
         protected void validate() throws AxonConfigurationException {
-            // Kept to be overridden
+            // Method kept for overriding
         }
     }
 }

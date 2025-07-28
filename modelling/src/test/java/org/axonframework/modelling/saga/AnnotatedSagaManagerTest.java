@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,10 @@ import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventhandling.ResetNotSupportedException;
 import org.axonframework.eventhandling.Segment;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.ResultMessage;
 import org.axonframework.messaging.annotation.MetaDataValue;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
@@ -36,7 +37,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.singletonMap;
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
+import static org.axonframework.eventhandling.EventTestUtils.asEventMessage;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -57,132 +58,136 @@ public class AnnotatedSagaManagerTest {
         sagaStore = new InMemorySagaStore();
         sagaRepository = spy(
                 AnnotatedSagaRepository.<MyTestSaga>builder()
-                        .sagaType(MyTestSaga.class)
-                        .sagaStore(sagaStore)
-                        .build()
+                                       .sagaType(MyTestSaga.class)
+                                       .sagaStore(sagaStore)
+                                       .build()
         );
         testSubject = AnnotatedSagaManager.<MyTestSaga>builder()
-                .sagaRepository(sagaRepository)
-                .sagaType(MyTestSaga.class)
-                .sagaFactory(MyTestSaga::new)
-                .build();
+                                          .sagaRepository(sagaRepository)
+                                          .sagaType(MyTestSaga.class)
+                                          .sagaFactory(MyTestSaga::new)
+                                          .build();
     }
 
     @Test
-    void testCreationPolicy_NoneExists() throws Exception {
-        handle(new GenericEventMessage<>(new StartingEvent("123")));
+    void creationPolicy_NoneExists() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("123")));
         assertEquals(1, repositoryContents("123").size());
     }
 
     @Test
-    void testCreationPolicy_OneAlreadyExists() throws Exception {
-        handle(new GenericEventMessage<>(new StartingEvent("123")));
-        handle(new GenericEventMessage<>(new StartingEvent("123")));
+    void creationPolicy_OneAlreadyExists() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("123")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("123")));
         assertEquals(1, repositoryContents("123").size());
     }
 
     @Test
-    void testHandleUnrelatedEvent() throws Exception {
-        handle(new GenericEventMessage<>("Unrelated"));
+    void handleUnrelatedEvent() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), "Unrelated"));
         verify(sagaRepository, never()).find(isNull());
     }
 
     @Test
-    void testCreationPolicy_CreationForced() throws Exception {
+    void creationPolicy_CreationForced() throws Exception {
         StartingEvent startingEvent = new StartingEvent("123");
-        handle(new GenericEventMessage<>(startingEvent));
-        handle(new GenericEventMessage<>(new ForcingStartEvent("123")));
+        handle(new GenericEventMessage<>(new MessageType("event"), startingEvent));
+        handle(new GenericEventMessage<>(new MessageType("event"), new ForcingStartEvent("123")));
         Collection<MyTestSaga> sagas = repositoryContents("123");
         assertEquals(2, sagas.size());
         for (MyTestSaga saga : sagas) {
             if (saga.getCapturedEvents().contains(startingEvent)) {
                 assertEquals(2, saga.getCapturedEvents().size());
             }
-            assertTrue(saga.getCapturedEvents().size() >= 1);
+            assertFalse(saga.getCapturedEvents().isEmpty());
         }
     }
 
     @Test
-    void testCreationPolicy_SagaNotCreated() throws Exception {
-        handle(new GenericEventMessage<>(new MiddleEvent("123")));
+    void creationPolicy_SagaNotCreated() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new MiddleEvent("123")));
         assertEquals(0, repositoryContents("123").size());
     }
 
     @Test
-    void testMostSpecificHandlerEvaluatedFirst() throws Exception {
-        handle(new GenericEventMessage<>(new StartingEvent("12")));
-        handle(new GenericEventMessage<>(new StartingEvent("23")));
+    void mostSpecificHandlerEvaluatedFirst() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("12")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("23")));
         assertEquals(1, repositoryContents("12").size());
         assertEquals(1, repositoryContents("23").size());
 
-        handle(new GenericEventMessage<>(new MiddleEvent("12")));
-        handle(new GenericEventMessage<>(new MiddleEvent("23"), singletonMap("catA", "value")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new MiddleEvent("12")));
+        handle(new GenericEventMessage<>(
+                new MessageType("event"), new MiddleEvent("23"), singletonMap("catA", "value")
+        ));
         assertEquals(0, repositoryContents("12").iterator().next().getSpecificHandlerInvocations());
         assertEquals(1, repositoryContents("23").iterator().next().getSpecificHandlerInvocations());
     }
 
     @Test
-    void testNullAssociationValueIsIgnored() throws Exception {
-        handle(new GenericEventMessage<>(new StartingEvent(null)));
+    void nullAssociationValueIsIgnored() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent(null)));
 
         verify(sagaRepository, never()).find(null);
     }
 
     @Test
-    void testLifecycle_DestroyedOnEnd() throws Exception {
-        handle(new GenericEventMessage<>(new StartingEvent("12")));
-        handle(new GenericEventMessage<>(new StartingEvent("23")));
-        handle(new GenericEventMessage<>(new MiddleEvent("12")));
-        handle(new GenericEventMessage<>(new MiddleEvent("23"), singletonMap("catA", "value")));
+    void lifecycle_DestroyedOnEnd() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("12")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("23")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new MiddleEvent("12")));
+        handle(new GenericEventMessage<>(
+                new MessageType("event"), new MiddleEvent("23"), singletonMap("catA", "value")
+        ));
 
         assertEquals(1, repositoryContents("12").size());
         assertEquals(1, repositoryContents("23").size());
         assertEquals(0, repositoryContents("12").iterator().next().getSpecificHandlerInvocations());
         assertEquals(1, repositoryContents("23").iterator().next().getSpecificHandlerInvocations());
-        handle(new GenericEventMessage<>(new EndingEvent("12")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new EndingEvent("12")));
         assertEquals(1, repositoryContents("23").size());
         assertEquals(0, repositoryContents("12").size());
-        handle(new GenericEventMessage<>(new EndingEvent("23")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new EndingEvent("23")));
         assertEquals(0, repositoryContents("23").size());
         assertEquals(0, repositoryContents("12").size());
     }
 
     @Test
-    void testNullAssociationValueDoesNotThrowNullPointer() throws Exception {
+    void nullAssociationValueDoesNotThrowNullPointer() throws Exception {
         handle(asEventMessage(new StartingEvent(null)));
     }
 
     @Test
-    void testLifeCycle_ExistingInstanceIgnoresEvent() throws Exception {
-        handle(new GenericEventMessage<>(new StartingEvent("12")));
-        handle(new GenericEventMessage<>(new StubDomainEvent()));
+    void lifeCycle_ExistingInstanceIgnoresEvent() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new StartingEvent("12")));
+        handle(new GenericEventMessage<>(new MessageType("event"), new StubDomainEvent()));
         assertEquals(1, repositoryContents("12").size());
         assertEquals(1, repositoryContents("12").iterator().next().getCapturedEvents().size());
     }
 
     @Test
-    void testLifeCycle_IgnoredEventDoesNotCreateInstance() throws Exception {
-        handle(new GenericEventMessage<>(new StubDomainEvent()));
+    void lifeCycle_IgnoredEventDoesNotCreateInstance() throws Exception {
+        handle(new GenericEventMessage<>(new MessageType("event"), new StubDomainEvent()));
         assertEquals(0, repositoryContents("12").size());
     }
 
     @Test
-    void testPerformResetThrowsResetNotSupportedException() {
+    void performResetThrowsResetNotSupportedException() {
         AnnotatedSagaManager<MyTestSaga> spiedTestSubject = spy(testSubject);
 
-        assertThrows(ResetNotSupportedException.class, spiedTestSubject::performReset);
+        assertThrows(ResetNotSupportedException.class, () -> spiedTestSubject.performReset(null));
 
-        verify(spiedTestSubject).performReset(null);
+        verify(spiedTestSubject).performReset(null, null);
     }
 
     @Test
-    void testPerformResetWithResetInfoThrowsResetNotSupportedException() {
-        assertThrows(ResetNotSupportedException.class, () -> testSubject.performReset("reset-info"));
+    void performResetWithResetInfoThrowsResetNotSupportedException() {
+        assertThrows(ResetNotSupportedException.class, () -> testSubject.performReset("reset-info", null));
     }
 
     private void handle(EventMessage<?> event) throws Exception {
-        ResultMessage<?> resultMessage = DefaultUnitOfWork.startAndGet(event).executeWithResult(() -> {
-            testSubject.handle(event, Segment.ROOT_SEGMENT);
+        ResultMessage<?> resultMessage = LegacyDefaultUnitOfWork.startAndGet(event).executeWithResult((ctx) -> {
+            testSubject.handle(event, ctx, Segment.ROOT_SEGMENT);
             return null;
         });
         if (resultMessage.isExceptional()) {
@@ -200,8 +205,6 @@ public class AnnotatedSagaManagerTest {
 
     @SuppressWarnings("unused")
     public static class MyTestSaga {
-
-        private static final long serialVersionUID = -1562911263884220240L;
 
         private final List<Object> capturedEvents = new LinkedList<>();
         private int specificHandlerInvocations = 0;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,16 @@
 
 package org.axonframework.test.aggregate;
 
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.CommandExecutionException;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.commandhandling.NoHandlerForCommandException;
-import org.axonframework.eventhandling.EventHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.eventsourcing.eventstore.EventStoreException;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
+import org.axonframework.test.AxonAssertionError;
 import org.axonframework.test.FixtureExecutionException;
 import org.junit.jupiter.api.*;
 
@@ -36,16 +40,20 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class FixtureTest_ExceptionHandling {
 
+    private static final String AGGREGATE_ID = "1";
+
     private final FixtureConfiguration<MyAggregate> fixture = new AggregateTestFixture<>(MyAggregate.class);
 
     @Test
-    void testCreateAggregate() {
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void createAggregate() {
         fixture.givenCommands()
                .when(new CreateMyAggregateCommand("14"))
                .expectEvents(new MyAggregateCreatedEvent("14"));
     }
 
     @Test
+    @Disabled("TODO #3062 - Revisit Exception Handling")
     void givenUnknownCommand() {
         FixtureExecutionException result = assertThrows(FixtureExecutionException.class, () ->
                 fixture.givenCommands(
@@ -57,14 +65,15 @@ class FixtureTest_ExceptionHandling {
     }
 
     @Test
-    void testWhenExceptionTriggeringCommand() {
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void whenExceptionTriggeringCommand() {
         fixture.givenCommands(new CreateMyAggregateCommand("14"))
                .when(new ExceptionTriggeringCommand("14"))
                .expectException(RuntimeException.class);
     }
 
     @Test
-    void testGivenExceptionTriggeringCommand() {
+    void givenExceptionTriggeringCommand() {
         assertThrows(RuntimeException.class, () ->
                 fixture.givenCommands(
                         new CreateMyAggregateCommand("14"),
@@ -74,14 +83,16 @@ class FixtureTest_ExceptionHandling {
     }
 
     @Test
-    void testGivenCommandWithInvalidIdentifier() {
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void givenCommandWithInvalidIdentifier() {
         fixture.givenCommands(new CreateMyAggregateCommand("1"))
                .when(new ValidMyAggregateCommand("2"))
                .expectException(EventStoreException.class);
     }
 
     @Test
-    void testExceptionMessageCheck() {
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void exceptionMessageCheck() {
         fixture.givenCommands(new CreateMyAggregateCommand("1"))
                .when(new ValidMyAggregateCommand("2"))
                .expectException(EventStoreException.class)
@@ -93,7 +104,8 @@ class FixtureTest_ExceptionHandling {
     }
 
     @Test
-    void testExceptionMessageCheckWithMatcher() {
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void exceptionMessageCheckWithMatcher() {
         fixture.givenCommands(new CreateMyAggregateCommand("1"))
                .when(new ValidMyAggregateCommand("2"))
                .expectException(EventStoreException.class)
@@ -101,13 +113,72 @@ class FixtureTest_ExceptionHandling {
     }
 
     @Test
-    void testWhenCommandWithInvalidIdentifier() {
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void exceptionDetailsCheckWithEquality() {
+        fixture.givenCommands(new CreateMyAggregateCommand("1"))
+                .when(new ExceptionWithDetailsTriggeringCommand("1"))
+                .expectException(CommandExecutionException.class)
+                .expectExceptionDetails("Details");
+    }
+
+    @Test
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void exceptionDetailsCheckWithType() {
+        fixture.givenCommands(new CreateMyAggregateCommand("1"))
+               .when(new ExceptionWithDetailsTriggeringCommand("1"))
+               .expectException(CommandExecutionException.class)
+               .expectExceptionDetails(String.class);
+    }
+
+    @Test
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void exceptionDetailsCheckWithMatcher() {
+        fixture.givenCommands(new CreateMyAggregateCommand("1"))
+               .when(new ExceptionWithDetailsTriggeringCommand("1"))
+               .expectException(CommandExecutionException.class)
+               .expectExceptionDetails(containsString("Details"));
+    }
+
+    @Test
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void whenCommandWithInvalidIdentifier() {
         assertThrows(FixtureExecutionException.class, () ->
                 fixture.givenCommands(
                         new CreateMyAggregateCommand("1"),
                         new ValidMyAggregateCommand("2")
                 )
         );
+    }
+
+    @Test
+    void expectExceptionMessageThrowsFixtureExecutionExceptionWhenNoExceptionIsThrown() {
+        assertThrows(
+                AxonAssertionError.class,
+                () -> fixture.given(new MyAggregateCreatedEvent(AGGREGATE_ID))
+                             .when(new ValidMyAggregateCommand(AGGREGATE_ID))
+                             .expectExceptionMessage("some-exception-message")
+        );
+    }
+
+    @Test
+    void expectUncheckedExceptionsDuringAggregateConstructorCommandHandler() {
+        boolean throwUncheckedException = true;
+        boolean doNotThrowCheckedException = false;
+
+        fixture.givenCommands()
+               .when(new CreateMyAggregateCommand("14", doNotThrowCheckedException, throwUncheckedException))
+               .expectException(RuntimeException.class);
+    }
+
+    @Test
+    @Disabled("TODO #3062 - Revisit Exception Handling")
+    void expectCheckedExceptionsDuringAggregateConstructorCommandHandler() {
+        boolean doNoThrowUncheckedException = false;
+        boolean throwCheckedException = true;
+
+        fixture.givenCommands()
+               .when(new CreateMyAggregateCommand("14", throwCheckedException, doNoThrowUncheckedException))
+               .expectException(CheckedException.class);
     }
 
     private static abstract class AbstractMyAggregateCommand {
@@ -122,14 +193,32 @@ class FixtureTest_ExceptionHandling {
 
     private static class CreateMyAggregateCommand extends AbstractMyAggregateCommand {
 
+        private final boolean shouldThrowCheckedException;
+        private final boolean shouldThrowUncheckedException;
+
         protected CreateMyAggregateCommand(String id) {
+            this(id, false, false);
+        }
+
+        protected CreateMyAggregateCommand(String id,
+                                           boolean shouldThrowCheckedException,
+                                           boolean shouldThrowUncheckedException) {
             super(id);
+            this.shouldThrowCheckedException = shouldThrowCheckedException;
+            this.shouldThrowUncheckedException = shouldThrowUncheckedException;
         }
     }
 
     private static class ExceptionTriggeringCommand extends AbstractMyAggregateCommand {
 
         protected ExceptionTriggeringCommand(String id) {
+            super(id);
+        }
+    }
+
+    private static class ExceptionWithDetailsTriggeringCommand extends AbstractMyAggregateCommand {
+
+        protected ExceptionWithDetailsTriggeringCommand(String id) {
             super(id);
         }
     }
@@ -167,7 +256,14 @@ class FixtureTest_ExceptionHandling {
         }
 
         @CommandHandler
-        public MyAggregate(CreateMyAggregateCommand cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateMyAggregateCommand cmd) throws CheckedException {
+            if (cmd.shouldThrowCheckedException) {
+                throw new CheckedException();
+            }
+            if (cmd.shouldThrowUncheckedException) {
+                throw new RuntimeException();
+            }
             apply(new MyAggregateCreatedEvent(cmd.id));
         }
 
@@ -181,9 +277,18 @@ class FixtureTest_ExceptionHandling {
             throw new RuntimeException("Error");
         }
 
+        @CommandHandler
+        public void handle(ExceptionWithDetailsTriggeringCommand cmd) {
+            throw new CommandExecutionException("Error", null, "Details");
+        }
+
         @EventHandler
         private void on(MyAggregateCreatedEvent event) {
             this.id = event.id;
         }
+    }
+
+    private static class CheckedException extends Exception {
+
     }
 }

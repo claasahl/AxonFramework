@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.AssociationValuesImpl;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.StubSaga;
+import org.axonframework.modelling.utils.TestSerializer;
 import org.hsqldb.jdbc.JDBCDataSource;
 import org.junit.jupiter.api.*;
 
@@ -33,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
+ * Test class validating the {@link JdbcSagaStore}.
+ *
  * @author Kristian Rosenvold
  */
 class JdbcSagaStoreTest {
@@ -49,7 +52,11 @@ class JdbcSagaStoreTest {
         dataSource.setUrl("jdbc:hsqldb:mem:test");
 
         connection = dataSource.getConnection();
-        testSubject = JdbcSagaStore.builder().dataSource(dataSource).sqlSchema(new HsqlSagaSqlSchema()).build();
+        testSubject = JdbcSagaStore.builder()
+                                   .dataSource(dataSource)
+                                   .sqlSchema(new HsqlSagaSqlSchema())
+                                   .serializer(TestSerializer.xStreamSerializer())
+                                   .build();
         testSubject.createSchema();
 
         reset(dataSource);
@@ -62,7 +69,7 @@ class JdbcSagaStoreTest {
     }
 
     @Test
-    void testInsertUpdateAndLoadSaga() {
+    void insertUpdateAndLoadSaga() {
         StubSaga saga = new StubSaga();
         Set<AssociationValue> associationValues = singleton(new AssociationValue("key", "value"));
         testSubject.insertSaga(StubSaga.class, "123", saga, associationValues);
@@ -75,12 +82,12 @@ class JdbcSagaStoreTest {
     }
 
     @Test
-    void testLoadSaga_NotFound() {
+    void loadSaga_NotFound() {
         assertNull(testSubject.loadSaga(StubSaga.class, "123456"));
     }
 
     @Test
-    void testLoadSagaByAssociationValue() {
+    void loadSagaByAssociationValue() {
         AssociationValues associationsValues =
                 new AssociationValuesImpl(singleton(new AssociationValue("key", "value")));
         testSubject.insertSaga(StubSaga.class, "123", new StubSaga(), associationsValues.asSet());
@@ -99,7 +106,7 @@ class JdbcSagaStoreTest {
     }
 
     @Test
-    void testUpdateSagaWhenDeleted() {
+    void updateSagaWhenDeleted() {
         AssociationValues associationsValues = new AssociationValuesImpl(singleton(new AssociationValue("key", "value")));
         testSubject.updateSaga(StubSaga.class, "123456", new StubSaga(), associationsValues);
         assertNull(testSubject.loadSaga(StubSaga.class, "123456"));

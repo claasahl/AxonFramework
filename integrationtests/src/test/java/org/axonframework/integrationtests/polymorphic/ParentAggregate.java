@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,15 +16,14 @@
 
 package org.axonframework.integrationtests.polymorphic;
 
-import org.axonframework.commandhandling.CommandHandler;
-import org.axonframework.eventhandling.EventHandler;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Inheritance;
+import jakarta.persistence.InheritanceType;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.modelling.command.CommandHandlerInterceptor;
-
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.Inheritance;
-import javax.persistence.InheritanceType;
 
 import static org.axonframework.modelling.command.AggregateLifecycle.apply;
 
@@ -56,9 +55,13 @@ public abstract class ParentAggregate {
     @CommandHandler
     public static ParentAggregate create(CreateChildFactoryCommand cmd) {
         if (cmd.getChild() == 1) {
-            return new Child1Aggregate(new CreateChild1Command(cmd.getId()));
+            Child1Aggregate child1Aggregate = new Child1Aggregate();
+            child1Aggregate.handle(new CreateChild1Command(cmd.getId()));
+            return child1Aggregate;
         } else {
-            return new Child2Aggregate(new CreateChild2Command(cmd.getId()));
+            Child2Aggregate child2Aggregate = new Child2Aggregate();
+            child2Aggregate.handle(new CreateChild2Command(cmd.getId()));
+            return child2Aggregate;
         }
     }
 

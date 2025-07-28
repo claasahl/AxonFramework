@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,6 +36,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * EventStore implementation used for testing purposes. It makes it easier to verify events, snapshots and requests
@@ -50,12 +52,37 @@ public class EventStoreImpl extends EventStoreGrpc.EventStoreImplBase {
     private final List<GetEventsRequest> getEventsRequests = new ArrayList<>();
     private final List<QueryEventsRequest> queryEventsRequests = new ArrayList<>();
 
+    private Predicate<GetAggregateSnapshotsRequest> snapshotFailure = snapshotRequest -> false;
+    private Supplier<Exception> snapshotFailureException = IllegalStateException::new;
+
     public List<GetEventsRequest> getEventsRequests() {
         return getEventsRequests;
     }
 
     public List<QueryEventsRequest> getQueryEventsRequests() {
         return queryEventsRequests;
+    }
+
+    /**
+     * Sets a {@link Predicate} to return true if a snapshot {@link Event} should fail. Defaults with returning {@code
+     * false}.
+     *
+     * @param snapshotFailure the {@link Predicate} that should return {@code true} to fail for reading a snapshot
+     *                        event
+     */
+    public void setSnapshotFailure(Predicate<GetAggregateSnapshotsRequest> snapshotFailure) {
+        this.snapshotFailure = snapshotFailure;
+    }
+
+    /**
+     * Sets the {@link Exception} to throw if the {@code snapshotFailure} returns {@code true}. Defaults to throwing an
+     * {@link IllegalStateException}.
+     *
+     * @param snapshotFailureException a supplier of an {@link Exception} to throw if the {@code snapshotFailure}
+     *                                 returns {@code true}
+     */
+    public void setSnapshotFailureException(Supplier<Exception> snapshotFailureException) {
+        this.snapshotFailureException = snapshotFailureException;
     }
 
     @Override
@@ -98,13 +125,19 @@ public class EventStoreImpl extends EventStoreGrpc.EventStoreImplBase {
         }
         events.stream()
               .filter(e -> e.getAggregateIdentifier().equals(request.getAggregateId()))
-              .filter(e -> snapshot == null || snapshot.getAggregateSequenceNumber() < e.getAggregateSequenceNumber())
+              .filter(e -> e.getAggregateSequenceNumber() >= request.getInitialSequence()
+                      && (snapshot == null || snapshot.getAggregateSequenceNumber() < e.getAggregateSequenceNumber()))
               .forEach(responseObserver::onNext);
         responseObserver.onCompleted();
     }
 
     @Override
     public void listAggregateSnapshots(GetAggregateSnapshotsRequest request, StreamObserver<Event> responseObserver) {
+        if (snapshotFailure.test(request)) {
+            responseObserver.onError(snapshotFailureException.get());
+            return;
+        }
+
         Event snapshot = snapshots.get(request.getAggregateId());
         if (snapshot != null) {
             responseObserver.onNext(snapshot);
@@ -169,7 +202,7 @@ public class EventStoreImpl extends EventStoreGrpc.EventStoreImplBase {
 
             @Override
             public void onCompleted() {
-
+                responseObserver.onCompleted();
             }
         };
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ public class SpringResourceInjectorTest {
     }
 
     @Test
-    void testInjectSaga() {
+    void injectSaga() {
         InjectableSaga injectableSaga = new InjectableSaga();
         testSubject.injectResources(injectableSaga);
         assertNotNull(injectableSaga.getCommandBus());
@@ -53,14 +53,12 @@ public class SpringResourceInjectorTest {
     }
 
     @Test
-    void testResourcesNotAvailable() {
+    void resourcesNotAvailable() {
         ProblematicInjectableSaga injectableSaga = new ProblematicInjectableSaga();
         assertThrows(BeanCreationException.class, () -> testSubject.injectResources(injectableSaga));
     }
 
     public static class InjectableSaga {
-
-        private static final long serialVersionUID = 6273830321273396327L;
 
         @Autowired
         private CommandBus commandBus1;
@@ -89,8 +87,6 @@ public class SpringResourceInjectorTest {
 
     public static class ProblematicInjectableSaga extends InjectableSaga {
 
-        private static final long serialVersionUID = 3731262948334502511L;
-
         @Override
         @Autowired(required = true)
         public void setEventBus(EventBus eventBus) {
@@ -108,7 +104,7 @@ public class SpringResourceInjectorTest {
 
         @Bean
         public CommandBus commandBus() {
-            return SimpleCommandBus.builder().build();
+            return new SimpleCommandBus();
         }
     }
 }

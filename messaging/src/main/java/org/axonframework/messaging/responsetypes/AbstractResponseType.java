@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package org.axonframework.messaging.responsetypes;
 
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.TypeReflectionUtils;
+import org.axonframework.util.ClasspathResolver;
+import org.reactivestreams.Publisher;
 
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
@@ -26,7 +28,6 @@ import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 /**
@@ -62,16 +63,9 @@ public abstract class AbstractResponseType<R> implements ResponseType<R> {
         return expectedResponseType;
     }
 
-    /**
-     * Tries to unwrap generic type if provided {@code type} is of type {@link Future}.
-     *
-     * @param type to be unwrapped
-     * @return unwrapped generic, or original if provided {@code type} is not of type {@link Future}
-     * @deprecated Use {@link ReflectionUtils#unwrapIfType(Type, Class[])} instead
-     */
-    @Deprecated
-    protected Type unwrapIfTypeFuture(Type type) {
-        return ReflectionUtils.unwrapIfType(type, Future.class);
+    protected boolean isPublisherOfExpectedType(Type responseType) {
+        Type publisherType = TypeReflectionUtils.getExactSuperType(responseType, Publisher.class);
+        return publisherType != null && isParameterizedTypeOfExpectedType(publisherType);
     }
 
     protected boolean isIterableOfExpectedType(Type responseType) {
@@ -150,6 +144,10 @@ public abstract class AbstractResponseType<R> implements ResponseType<R> {
 
     protected boolean isAssignableFrom(Type responseType) {
         return responseType instanceof Class && expectedResponseType.isAssignableFrom((Class) responseType);
+    }
+
+    protected boolean projectReactorOnClassPath() {
+        return ClasspathResolver.projectReactorOnClasspath();
     }
 
     @Override

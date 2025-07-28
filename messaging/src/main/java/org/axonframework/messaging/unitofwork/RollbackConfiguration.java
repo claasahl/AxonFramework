@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ package org.axonframework.messaging.unitofwork;
  * @author Martin Tilma
  * @since 1.1
  */
+@Deprecated // exceptions need to be handled by an interceptor, or otherwise they are always considered an error
 public interface RollbackConfiguration {
 
     /**

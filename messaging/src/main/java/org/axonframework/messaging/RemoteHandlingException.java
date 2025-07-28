@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,9 @@ import java.util.List;
 /**
  * Exception indicating that an error has occurred while remotely handling a message.
  * <p/>
+ * By default, a stack trace is not generated for this exception. However, the stack trace creation can be enforced
+ * explicitly via the constructor accepting the {@code writableStackTrace} parameter.
+ * <p/>
  * The sender of the message <strong>cannot</strong> assume that the message has not been handled. It may, if the type
  * of message or the infrastructure allows it, try to dispatch the message again.
  *
@@ -30,8 +33,6 @@ import java.util.List;
  * @since 2.0
  */
 public class RemoteHandlingException extends AxonException {
-
-    private static final long serialVersionUID = 7310513417002285205L;
 
     private final List<String> exceptionDescriptions;
 
@@ -41,7 +42,18 @@ public class RemoteHandlingException extends AxonException {
      * @param exceptionDescription a {@link String} describing the remote exceptions
      */
     public RemoteHandlingException(RemoteExceptionDescription exceptionDescription) {
-        super("An exception was thrown by the remote message handling component: " + exceptionDescription.toString());
+        this(exceptionDescription, false);
+    }
+
+    /**
+     * Initializes the exception using the given {@code exceptionDescription} and {@code writableStackTrace}.
+     *
+     * @param exceptionDescription a {@link String} describing the remote exceptions
+     * @param writableStackTrace   whether the stack trace should be generated ({@code true}) or not ({@code false})
+     */
+    public RemoteHandlingException(RemoteExceptionDescription exceptionDescription, boolean writableStackTrace) {
+        super("An exception was thrown by the remote message handling component: " + exceptionDescription.toString(),
+              null, writableStackTrace);
         this.exceptionDescriptions = exceptionDescription.getDescriptions();
     }
 

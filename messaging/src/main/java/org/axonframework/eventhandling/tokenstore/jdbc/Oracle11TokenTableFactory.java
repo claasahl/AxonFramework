@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ public class Oracle11TokenTableFactory implements TokenTableFactory {
                 schema.tokenColumn() + " " + " BLOB NULL,\n" +
                 schema.tokenTypeColumn() + " VARCHAR(255) NULL,\n" +
                 schema.timestampColumn() + " VARCHAR(255) NULL,\n" +
-                schema.ownerColum() + " VARCHAR(255) NULL,\n" +
+                schema.ownerColumn() + " VARCHAR(255) NULL,\n" +
                 "PRIMARY KEY (" + schema.processorNameColumn() + "," + schema.segmentColumn() + ")\n" +
                 ")";
         return connection.prepareStatement(sql);

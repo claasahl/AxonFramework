@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,11 +16,15 @@
 
 package org.axonframework.eventhandling.replay;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.ReplayStatus;
 import org.axonframework.eventhandling.ReplayToken;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.annotation.ParameterResolver;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;
@@ -37,24 +41,29 @@ import java.lang.reflect.Parameter;
  */
 public class ReplayParameterResolverFactory implements ParameterResolverFactory {
 
+    @Nullable
     @Override
-    public ParameterResolver createInstance(Executable executable, Parameter[] parameters, int parameterIndex) {
+    public ParameterResolver<ReplayStatus> createInstance(@Nonnull Executable executable, @Nonnull Parameter[] parameters, int parameterIndex) {
         if (ReplayStatus.class.isAssignableFrom(parameters[parameterIndex].getType())) {
             return new ReplayParameterResolver();
         }
         return null;
     }
 
-    private class ReplayParameterResolver implements ParameterResolver {
+    private static class ReplayParameterResolver implements ParameterResolver<ReplayStatus> {
 
+        @Nullable
         @Override
-        public Object resolveParameterValue(Message message) {
-            return ReplayToken.isReplay(message) ? ReplayStatus.REPLAY : ReplayStatus.REGULAR;
+        public ReplayStatus resolveParameterValue(@Nonnull ProcessingContext context) {
+            if (Message.fromContext(context) instanceof EventMessage<?> eventMessage) {
+                return ReplayToken.isReplay(eventMessage) ? ReplayStatus.REPLAY : ReplayStatus.REGULAR;
+            }
+            return ReplayStatus.REGULAR;
         }
 
         @Override
-        public boolean matches(Message message) {
-            return true;
+        public boolean matches(@Nonnull ProcessingContext context) {
+            return Message.fromContext(context) instanceof EventMessage<?>;
         }
     }
 }

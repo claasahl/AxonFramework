@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,49 +16,57 @@
 
 package org.axonframework.queryhandling.annotation;
 
+import org.axonframework.messaging.HandlerAttributes;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.annotation.WrappedMessageHandlingMember;
-import org.axonframework.queryhandling.QueryHandler;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.axonframework.queryhandling.QueryMessage;
 
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.lang.reflect.WildcardType;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Future;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTypeIfPrimitive;
 import static org.axonframework.common.ReflectionUtils.unwrapIfType;
 
 /**
- * Definition of handlers that can handle QueryMessages. These handlers are wrapped with a QueryHandlingMember that
- * exposes query-specific handler information.
+ * Definition of handlers that can handle {@link QueryMessage}s. These handlers are wrapped with a
+ * {@link QueryHandlingMember} that exposes query-specific handler information.
+ *
+ * @author Allard Buijze
+ * @since 3.1
  */
 public class MethodQueryMessageHandlerDefinition implements HandlerEnhancerDefinition {
 
-    @SuppressWarnings("unchecked")
     @Override
-    public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        return original.annotationAttributes(QueryHandler.class)
-                       .map(attr -> (MessageHandlingMember<T>)
-                               new MethodQueryMessageHandlerDefinition.MethodQueryMessageHandlingMember(original, attr))
+    public @Nonnull <T> MessageHandlingMember<T> wrapHandler(@Nonnull MessageHandlingMember<T> original) {
+        return original.<String>attribute(HandlerAttributes.QUERY_NAME)
+                       .map(queryName -> (MessageHandlingMember<T>)
+                               new MethodQueryMessageHandlerDefinition.MethodQueryMessageHandlingMember<>(
+                                       original, queryName
+                               )
+                       )
                        .orElse(original);
     }
 
-    private class MethodQueryMessageHandlingMember<T> extends WrappedMessageHandlingMember<T> implements QueryHandlingMember<T> {
+    private static class MethodQueryMessageHandlingMember<T>
+            extends WrappedMessageHandlingMember<T>
+            implements QueryHandlingMember<T> {
 
         private final String queryName;
         private final Type resultType;
 
-        public MethodQueryMessageHandlingMember(MessageHandlingMember<T> original, Map<String, Object> attr) {
+        public MethodQueryMessageHandlingMember(MessageHandlingMember<T> original, String queryNameAttribute) {
             super(original);
 
-            String queryNameAttribute = (String) attr.get("queryName");
             if ("".equals(queryNameAttribute)) {
                 queryNameAttribute = original.payloadType().getName();
             }
@@ -79,8 +87,8 @@ public class MethodQueryMessageHandlerDefinition implements HandlerEnhancerDefin
         }
 
         @Override
-        public Object handle(Message<?> message, T target) throws Exception {
-            Object result = super.handle(message, target);
+        public Object handleSync(@Nonnull Message<?> message, @Nonnull ProcessingContext context, @Nullable T target) throws Exception {
+            Object result = super.handleSync(message, context, target);
             if (result instanceof Optional) {
                 return ((Optional<?>) result).orElse(null);
             }
@@ -111,13 +119,12 @@ public class MethodQueryMessageHandlerDefinition implements HandlerEnhancerDefin
             return type;
         }
 
-        @SuppressWarnings("unchecked")
         @Override
-        public boolean canHandle(Message<?> message) {
-            return super.canHandle(message)
+        public boolean canHandle(@Nonnull Message<?> message, @Nonnull ProcessingContext context) {
+            return super.canHandle(message, context)
                     && message instanceof QueryMessage
-                    && queryName.equals(((QueryMessage) message).getQueryName())
-                    && ((QueryMessage) message).getResponseType().matches(resultType);
+                    && queryName.equals(message.type().name())
+                    && ((QueryMessage<?, ?>) message).getResponseType().matches(resultType);
         }
 
         @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,13 @@
 
 package org.axonframework.common;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Spliterator;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -111,7 +117,7 @@ public abstract class CollectionUtils {
      * @param collection1       The first collection
      * @param collection2       The second collection
      * @param collectionBuilder The factory for the returned collection instance
-     * @param <T>               The type of element contained in the resuling collection
+     * @param <T>               The type of element contained in the resulting collection
      * @param <C>               The type of collection to return
      * @return a collection containing the elements that were found in both given collections
      */
@@ -125,4 +131,22 @@ public abstract class CollectionUtils {
         }
         return result;
     }
+
+    /**
+     * Returns a new Map with the entries from given {@code existingMap} as well as an entry with given {@code newKey}
+     * and given {@code newValue}.
+     *
+     * @param existingMap A map containing the base elements to copy.
+     * @param newKey      The key of the new element to add.
+     * @param newValue    The value of the new element to add.
+     * @param <K>         The type of key
+     * @param <V>         The type of value
+     * @return a new Map instance containing the elements in the base map and the new key/value pair
+     */
+    public static <K, V> Map<K, V> mapWith(Map<K, V> existingMap, K newKey, V newValue) {
+        HashMap<K, V> newMap = new HashMap<>(existingMap);
+        newMap.put(newKey, newValue);
+        return newMap;
+    }
 }
+

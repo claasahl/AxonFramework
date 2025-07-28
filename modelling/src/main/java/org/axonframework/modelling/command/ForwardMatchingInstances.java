@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2024. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,11 @@ import org.axonframework.modelling.command.inspection.EntityModel;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Member;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
+import jakarta.annotation.Nonnull;
 
 import static org.axonframework.common.annotation.AnnotationUtils.findAnnotationAttributes;
 import static org.axonframework.common.property.PropertyAccessStrategy.getProperty;
@@ -39,24 +42,33 @@ import static org.axonframework.common.property.PropertyAccessStrategy.getProper
 public class ForwardMatchingInstances<T extends Message<?>> implements ForwardingMode<T> {
 
     private static final String EMPTY_STRING = "";
+    /**
+     * Placeholder value for {@code null} properties, indicating that no property is available
+     */
+    private static final Property<Object> NO_PROPERTY = new NoProperty();
+
+    private final Map<Class, Property> routingProperties = new ConcurrentHashMap<>();
 
     private String routingKey;
     private EntityModel childEntity;
 
     @Override
-    public void initialize(Member member, EntityModel childEntity) {
+    public void initialize(@Nonnull Member member, @Nonnull EntityModel childEntity) {
         this.childEntity = childEntity;
         this.routingKey = findAnnotationAttributes((AnnotatedElement) member, AggregateMember.class)
                 .map(map -> (String) map.get("routingKey"))
                 .filter(key -> !Objects.equals(key, EMPTY_STRING))
                 .orElse(childEntity.routingKey());
+        routingProperties.clear();
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <E> Stream<E> filterCandidates(T message, Stream<E> candidates) {
-        Property routingProperty = getProperty(message.getPayloadType(), routingKey);
-        if (routingProperty == null) {
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public <E> Stream<E> filterCandidates(@Nonnull T message, @Nonnull Stream<E> candidates) {
+        Property routingProperty = routingProperties.computeIfAbsent(message.getPayloadType(),
+                                                                     this::resolveProperty);
+
+        if (routingProperty == null || routingProperty == NO_PROPERTY) {
             return Stream.empty();
         }
 
@@ -64,10 +76,27 @@ public class ForwardMatchingInstances<T extends Message<?>> implements Forwardin
         return candidates.filter(candidate -> matchesInstance(candidate, routingValue));
     }
 
+    private Property<?> resolveProperty(Class<?> runtimeType) {
+        Property<?> property = getProperty(runtimeType, routingKey);
+        if (property == null) {
+            return NO_PROPERTY;
+        }
+        return property;
+    }
+
     @SuppressWarnings("unchecked")
     private <E> boolean matchesInstance(E candidate, Object routingValue) {
         Object identifier = childEntity.getIdentifier(candidate);
 
         return Objects.equals(routingValue, identifier);
+    }
+
+    private static class NoProperty implements Property<Object> {
+
+        @Override
+        public <V> V getValue(Object target) {
+            // this code should never be reached
+            throw new UnsupportedOperationException("Property not found on target");
+        }
     }
 }

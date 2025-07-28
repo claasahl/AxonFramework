@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,7 @@
 
 package org.axonframework.eventhandling;
 
+import org.axonframework.messaging.MessageType;
 import org.axonframework.serialization.LazyDeserializingObject;
 import org.axonframework.serialization.SerializedMessage;
 import org.axonframework.serialization.Serializer;
@@ -36,13 +37,13 @@ public abstract class EventUtils {
 
     /**
      * Convert an {@link EventMessage} to a {@link TrackedEventMessage} using the given {@code trackingToken}. If the
-     * event is a {@link DomainEventMessage} the message will be converted to a {@link
-     * GenericTrackedDomainEventMessage}, otherwise a {@link GenericTrackedEventMessage} is returned.
+     * event is a {@link DomainEventMessage} the message will be converted to a
+     * {@link GenericTrackedDomainEventMessage}, otherwise a {@link GenericTrackedEventMessage} is returned.
      *
      * @param eventMessage  the message to convert
      * @param trackingToken the tracking token to use for the resulting message
      * @param <T>           the payload type of the event
-     * @return the message converted to a tracked event messge
+     * @return the message converted to a tracked event message
      */
     public static <T> TrackedEventMessage<T> asTrackedEventMessage(EventMessage<T> eventMessage,
                                                                    TrackingToken trackingToken) {
@@ -53,23 +54,6 @@ public abstract class EventUtils {
             return new GenericTrackedDomainEventMessage<>(trackingToken, (DomainEventMessage<T>) eventMessage);
         }
         return new GenericTrackedEventMessage<>(trackingToken, eventMessage);
-    }
-
-    /**
-     * Convert a plain {@link EventMessage} to a {@link DomainEventMessage}. If the message already is a {@link
-     * DomainEventMessage} it will be returned as is. Otherwise a new {@link GenericDomainEventMessage} is made with
-     * {@code null} type, aggegrateIdentifier equal to messageIdentifier and sequence number of 0L.
-     *
-     * @param eventMessage the input event message
-     * @param <T>          The type of payload in the message
-     * @return the message converted to a domain event message
-     */
-    public static <T> DomainEventMessage<T> asDomainEventMessage(EventMessage<T> eventMessage) {
-        if (eventMessage instanceof DomainEventMessage<?>) {
-            return (DomainEventMessage<T>) eventMessage;
-        }
-        return new GenericDomainEventMessage<>(null, eventMessage.getIdentifier(), 0L, eventMessage,
-                                               eventMessage::getTimestamp);
     }
 
     /**
@@ -88,16 +72,18 @@ public abstract class EventUtils {
     public static Stream<TrackedEventMessage<?>> upcastAndDeserializeTrackedEvents(
             Stream<? extends TrackedEventData<?>> eventEntryStream,
             Serializer serializer,
-            EventUpcaster upcasterChain) {
+            EventUpcaster upcasterChain
+    ) {
         Stream<IntermediateEventRepresentation> upcastResult =
                 upcastAndDeserialize(eventEntryStream, upcasterChain,
                                      entry -> new InitialEventRepresentation(entry, serializer));
         return upcastResult.map(ir -> {
-            SerializedMessage<?> serializedMessage = new SerializedMessage<>(ir.getMessageIdentifier(),
-                                                                             new LazyDeserializingObject<>(
-                                                                                     ir::getData,
-                                                                                     ir.getType(), serializer),
-                                                                             ir.getMetaData());
+            SerializedMessage<?> serializedMessage = new SerializedMessage<>(
+                    ir.getMessageIdentifier(),
+                    new MessageType(serializer.classForType(ir.getType())),
+                    new LazyDeserializingObject<>(ir::getData, ir.getType(), serializer),
+                    ir.getMetaData()
+            );
             if (ir.getAggregateIdentifier().isPresent()) {
                 return new GenericTrackedDomainEventMessage<>(ir.getTrackingToken().get(),
                                                               ir.getAggregateType().orElse(null),

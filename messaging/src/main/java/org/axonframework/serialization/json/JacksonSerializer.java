@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.axonframework.serialization.json;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
@@ -40,22 +41,31 @@ import org.axonframework.serialization.SimpleSerializedType;
 import org.axonframework.serialization.UnknownSerializedType;
 
 import java.io.IOException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListSet;
+import java.lang.reflect.Type;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
  * Serializer implementation that uses Jackson to serialize objects into a JSON format. Although the Jackson serializer
- * requires classes to be compatible with this specific serializer, it providers much more compact serialization, while
- * still being human readable.
+ * requires classes to be compatible with this specific serializer, it provides much more compact serialization, while
+ * still being human-readable.
  *
  * @author Allard Buijze
  * @since 2.2
+ * @deprecated in favor of a Jackson-specific {@link Converter} implementation.
  */
+@Deprecated(forRemoval = true, since = "5.0.0")
 public class JacksonSerializer implements Serializer {
 
     private final RevisionResolver revisionResolver;
     private final Converter converter;
     private final ObjectMapper objectMapper;
+    private final Set<String> unknownClasses = new ConcurrentSkipListSet<>();
+    private final boolean cacheUnknownClasses;
 
     /**
      * Instantiate a Builder to be able to create a {@link JacksonSerializer}.
@@ -116,21 +126,60 @@ public class JacksonSerializer implements Serializer {
         if (converter instanceof ChainingConverter) {
             registerConverters((ChainingConverter) converter);
         }
+        this.cacheUnknownClasses = builder.cacheUnknownClasses;
     }
 
     /**
-     * Registers converters with the given {@code converter} which depend on the actual contents of the
-     * serialized for to represent a JSON format.
+     * Registers converters with the given {@code converter} which depend on the actual contents of the serialized form
+     * to represent a JSON format.
      *
      * @param converter The ChainingConverter instance to register the converters with.
      */
     protected void registerConverters(ChainingConverter converter) {
         converter.registerConverter(new JsonNodeToByteArrayConverter(objectMapper));
         converter.registerConverter(new ByteArrayToJsonNodeConverter(objectMapper));
+        converter.registerConverter(new JsonNodeToObjectNodeConverter());
+        converter.registerConverter(new ObjectNodeToJsonNodeConverter());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> T convert(@Nullable Object source, @Nonnull Type targetRepresentation) {
+        if (source == null) {
+            return null;
+        }
+        Class<?> sourceType = source.getClass();
+        JavaType valueType = objectMapper.constructType(targetRepresentation);
+        if (converter.canConvert(sourceType, valueType.getRawClass())) {
+            return (T) converter.convert(source, valueType.getRawClass());
+        } else if (converter.canConvert(sourceType, byte[].class)) {
+            // must be a serialized form
+            byte[] bytes = converter.convert(source, byte[].class);
+            try {
+                return objectMapper.readValue(bytes, valueType);
+            } catch (IOException e) {
+                throw new SerializationException(
+                        "Exception when trying to convert object of type '" + sourceType.getTypeName() + "' to '"
+                                + targetRepresentation.getTypeName() + "'", e);
+            }
+        } else if (converter.canConvert(valueType.getRawClass(),
+                                        byte[].class)) {
+            // the target is a serialized form
+            try {
+                byte[] bytes = objectMapper.writeValueAsBytes(source);
+                return (T) converter.convert(bytes, valueType.getRawClass());
+            } catch (JsonProcessingException e) {
+                throw new SerializationException(
+                        "Exception when trying to convert object of type '" + sourceType.getTypeName() + "' to '"
+                                + targetRepresentation.getTypeName() + "'", e);
+            }
+        } else {
+            return objectMapper.convertValue(source, valueType);
+        }
     }
 
     @Override
-    public <T> SerializedObject<T> serialize(Object object, Class<T> expectedRepresentation) {
+    public <T> SerializedObject<T> serialize(Object object, @Nonnull Class<T> expectedRepresentation) {
         try {
             if (String.class.equals(expectedRepresentation)) {
                 //noinspection unchecked
@@ -178,19 +227,20 @@ public class JacksonSerializer implements Serializer {
     }
 
     @Override
-    public <T> boolean canSerializeTo(Class<T> expectedRepresentation) {
+    public <T> boolean canSerializeTo(@Nonnull Class<T> expectedRepresentation) {
         return JsonNode.class.equals(expectedRepresentation) || String.class.equals(expectedRepresentation) ||
                 converter.canConvert(byte[].class, expectedRepresentation);
     }
 
     @Override
-    public <S, T> T deserialize(SerializedObject<S> serializedObject) {
+    public <S, T> T deserialize(@Nonnull SerializedObject<S> serializedObject) {
         try {
             if (SerializedType.emptyType().equals(serializedObject.getType())) {
                 return null;
             }
             Class<?> type = classForType(serializedObject.getType());
             if (UnknownSerializedType.class.isAssignableFrom(type)) {
+                //noinspection unchecked
                 return (T) new UnknownSerializedType(this, serializedObject);
             }
             if (JsonNode.class.equals(serializedObject.getContentType())) {
@@ -205,20 +255,25 @@ public class JacksonSerializer implements Serializer {
     }
 
     @Override
-    public Class classForType(SerializedType type) {
+    public Class classForType(@Nonnull SerializedType type) {
         if (SimpleSerializedType.emptyType().equals(type)) {
             return Void.class;
         }
+        String className = resolveClassName(type);
+        if (cacheUnknownClasses && unknownClasses.contains(className)) {
+            return UnknownSerializedType.class;
+        }
         try {
-            return objectMapper.getTypeFactory().findClass(resolveClassName(type));
+            return objectMapper.getTypeFactory().findClass(className);
         } catch (ClassNotFoundException e) {
+            unknownClasses.add(className);
             return UnknownSerializedType.class;
         }
     }
 
     /**
-     * Resolve the class name from the given {@code serializedType}. This method may be overridden to customize
-     * the names used to denote certain classes, for example, by leaving out a certain base package for brevity.
+     * Resolve the class name from the given {@code serializedType}. This method may be overridden to customize the
+     * names used to denote certain classes, for example, by leaving out a certain base package for brevity.
      *
      * @param serializedType The serialized type to resolve the class name for
      * @return The fully qualified name of the class to load
@@ -268,6 +323,8 @@ public class JacksonSerializer implements Serializer {
         private ObjectMapper objectMapper = new ObjectMapper();
         private boolean lenientDeserialization = false;
         private boolean defaultTyping = false;
+        private ClassLoader classLoader;
+        private boolean cacheUnknownClasses = true;
 
         /**
          * Sets the {@link RevisionResolver} used to resolve the revision from an object to be serialized. Defaults to
@@ -285,8 +342,8 @@ public class JacksonSerializer implements Serializer {
         }
 
         /**
-         * Sets the {@link Converter} used as a converter factory providing converter instances utilized by upcasters
-         * to convert between different content types. Defaults to a {@link ChainingConverter}.
+         * Sets the {@link Converter} used as a converter factory providing converter instances utilized by upcasters to
+         * convert between different content types. Defaults to a {@link ChainingConverter}.
          *
          * @param converter a {@link Converter} used as a converter factory providing converter instances utilized by
          *                  upcasters to convert between different content types
@@ -312,25 +369,26 @@ public class JacksonSerializer implements Serializer {
         }
 
         /**
-         * This method is a no-op, as the classloader is no longer used by the serializer.
-         * <p>
-         * Instead, ensure the ObjectMapper is configured with the correct class loader.
+         * Sets the {@link ClassLoader} used as an override for default {@code ClassLoader} used in the
+         * {@link ObjectMapper}. The same solution could thus be achieved by configuring the `ObjectMapper` instance
+         * directly.
          *
          * @param classLoader the {@link ClassLoader} used to load classes with when deserializing
          * @return the current Builder instance, for fluent interfacing
          * @see #objectMapper(ObjectMapper)
          * @see com.fasterxml.jackson.databind.type.TypeFactory#withClassLoader(ClassLoader)
-         * @deprecated Ensure the ObjectMapper is configured with the correct class loader instead
          */
-        @Deprecated
         public Builder classLoader(ClassLoader classLoader) {
+            assertNonNull(classLoader, "ClassLoader may not be null");
+            this.classLoader = classLoader;
             return this;
         }
 
         /**
          * Configures the underlying ObjectMapper to be lenient when deserializing JSON into Java objects. Specifically,
-         * enables the {@link DeserializationFeature#ACCEPT_SINGLE_VALUE_AS_ARRAY} and {@link
-         * DeserializationFeature#UNWRAP_SINGLE_VALUE_ARRAYS}, and disables {@link DeserializationFeature#FAIL_ON_UNKNOWN_PROPERTIES}.
+         * enables the {@link DeserializationFeature#ACCEPT_SINGLE_VALUE_AS_ARRAY} and
+         * {@link DeserializationFeature#UNWRAP_SINGLE_VALUE_ARRAYS}, and disables
+         * {@link DeserializationFeature#FAIL_ON_UNKNOWN_PROPERTIES}.
          *
          * @return the current Builder instance, for fluent interfacing
          */
@@ -340,12 +398,25 @@ public class JacksonSerializer implements Serializer {
         }
 
         /**
+         * Disables the caching of the names for classes which couldn't be resolved to a class.
+         * <p>
+         * It is recommended to disable this in case the class loading is dynamic, and classes that are not available at
+         * one point in time, may become available at any time later.
+         *
+         * @return the current Builder instance, for fluent interfacing
+         */
+        public Builder disableCachingOfUnknownClasses() {
+            this.cacheUnknownClasses = false;
+            return this;
+        }
+
+        /**
          * Configures the underlying {@link ObjectMapper} to include type information when serializing Java objects into
          * JSON. Specifically, it calls {@link ObjectMapper#enableDefaultTyping(ObjectMapper.DefaultTyping)} method,
-         * using {@link ObjectMapper.DefaultTyping#NON_CONCRETE_AND_ARRAYS}. This can be toggled on to allow {@link
-         * java.util.Collection}s of objects, for example query {@link java.util.List} responses, to automatically
-         * include the types without require the use of {@link com.fasterxml.jackson.annotation.JsonTypeInfo} on the
-         * objects themselves.
+         * using {@link ObjectMapper.DefaultTyping#NON_CONCRETE_AND_ARRAYS}. This can be toggled on to allow
+         * {@link java.util.Collection}s of objects, for example query {@link java.util.List} responses, to
+         * automatically include the types without require the use of
+         * {@link com.fasterxml.jackson.annotation.JsonTypeInfo} on the objects themselves.
          *
          * @return the current Builder instance, for fluent interfacing
          */
@@ -366,7 +437,11 @@ public class JacksonSerializer implements Serializer {
                 objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
             }
             if (defaultTyping) {
-                objectMapper.enableDefaultTyping(ObjectMapper.DefaultTyping.NON_CONCRETE_AND_ARRAYS);
+                objectMapper.activateDefaultTyping(objectMapper.getPolymorphicTypeValidator(),
+                                                   ObjectMapper.DefaultTyping.NON_CONCRETE_AND_ARRAYS);
+            }
+            if (classLoader != null) {
+                objectMapper.setTypeFactory(objectMapper.getTypeFactory().withClassLoader(classLoader));
             }
             return new JacksonSerializer(this);
         }
@@ -378,7 +453,7 @@ public class JacksonSerializer implements Serializer {
          *                                    specifications
          */
         protected void validate() throws AxonConfigurationException {
-            // Kept to be overridden
+            // Method kept for overriding
         }
     }
 }

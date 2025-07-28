@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.axonframework.eventhandling.TrackingToken;
 
 import java.beans.ConstructorProperties;
-import java.io.Serializable;
 import java.util.Map;
 import java.util.Objects;
 
@@ -35,9 +34,7 @@ import java.util.Objects;
  * @author Allard Buijze
  * @since 4.4
  */
-public class ConfigToken implements TrackingToken, Serializable {
-
-    private static final long serialVersionUID = -7566594580777375848L;
+public class ConfigToken implements TrackingToken {
 
     private final Map<String, String> config;
 

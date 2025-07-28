@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,26 @@
 
 package org.axonframework.test.aggregate;
 
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.eventsourcing.EventSourcedAggregate;
+import org.axonframework.eventsourcing.EventSourcingHandler;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
-import org.axonframework.modelling.command.Repository;
+import org.axonframework.modelling.command.CreationPolicy;
+import org.axonframework.modelling.command.LegacyRepository;
 import org.axonframework.modelling.command.RepositoryProvider;
 import org.axonframework.modelling.command.inspection.AggregateModel;
 import org.axonframework.modelling.command.inspection.AnnotatedAggregateMetaModelFactory;
-import org.axonframework.eventsourcing.EventSourcedAggregate;
-import org.axonframework.eventsourcing.EventSourcingHandler;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.*;
+import org.mockito.junit.jupiter.*;
 
 import java.util.Objects;
 import java.util.concurrent.Callable;
 
 import static org.axonframework.modelling.command.AggregateLifecycle.apply;
 import static org.axonframework.modelling.command.AggregateLifecycle.createNew;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -52,18 +54,30 @@ class FixtureTest_SpawningNewAggregate {
     }
 
     @Test
-    void testFixtureWithoutRepositoryProviderInjected() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixtureWithoutRepositoryProviderInjected() {
         fixture.givenNoPriorActivity()
-               .when(new CreateAggregate1Command("id", "aggregate2Id"))
+               .when(new CreateAggregate1Command("id", "aggregate2Id", false))
                .expectEvents(new Aggregate2CreatedEvent("aggregate2Id"), new Aggregate1CreatedEvent("id"))
+               .expectSuccessfulHandlerExecution();
+    }
+
+    @Test
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixtureShouldResolveResourcesInSpawnedAggregates() {
+        fixture.registerInjectableResource(new Resource());
+        fixture.givenNoPriorActivity()
+               .when(new CreateAggregate1Command("id", "aggregate2Id", true))
+               .expectEvents(new Aggregate2CreatedWithResourceEvent("aggregate2Id"), new Aggregate1CreatedEvent("id"))
                .expectSuccessfulHandlerExecution();
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void testFixtureWithRepositoryProviderInjected() throws Exception {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixtureWithRepositoryProviderInjected() throws Exception {
         RepositoryProvider repositoryProvider = mock(RepositoryProvider.class);
-        Repository<Aggregate2> aggregate2Repository = mock(Repository.class);
+        LegacyRepository<Aggregate2> aggregate2Repository = mock(LegacyRepository.class);
         AggregateModel<Aggregate2> aggregate2Model = AnnotatedAggregateMetaModelFactory
                 .inspectAggregate(Aggregate2.class);
 
@@ -79,7 +93,7 @@ class FixtureTest_SpawningNewAggregate {
 
         fixture.registerRepositoryProvider(repositoryProvider)
                .givenNoPriorActivity()
-               .when(new CreateAggregate1Command("id", "aggregate2Id"))
+               .when(new CreateAggregate1Command("id", "aggregate2Id", false))
                .expectEvents(new Aggregate2CreatedEvent("aggregate2Id"), new Aggregate1CreatedEvent("id"))
                .expectSuccessfulHandlerExecution();
 
@@ -91,10 +105,12 @@ class FixtureTest_SpawningNewAggregate {
 
         private final String id;
         private final String aggregate2Id;
+        private final boolean requireResource;
 
-        private CreateAggregate1Command(String id, String aggregate2Id) {
+        private CreateAggregate1Command(String id, String aggregate2Id, boolean requireResource) {
             this.id = id;
             this.aggregate2Id = aggregate2Id;
+            this.requireResource = requireResource;
         }
 
         public String getId() {
@@ -103,6 +119,10 @@ class FixtureTest_SpawningNewAggregate {
 
         String getAggregate2Id() {
             return aggregate2Id;
+        }
+
+        public boolean isRequireResource() {
+            return requireResource;
         }
     }
 
@@ -166,6 +186,36 @@ class FixtureTest_SpawningNewAggregate {
         }
     }
 
+    private static class Aggregate2CreatedWithResourceEvent {
+
+        private final String id;
+
+        private Aggregate2CreatedWithResourceEvent(String id) {
+            this.id = id;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            Aggregate2CreatedWithResourceEvent that = (Aggregate2CreatedWithResourceEvent) o;
+            return Objects.equals(id, that.id);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id);
+        }
+    }
+
     @SuppressWarnings("unused")
     private static class Aggregate1 {
 
@@ -176,13 +226,14 @@ class FixtureTest_SpawningNewAggregate {
         }
 
         @CommandHandler
-        public Aggregate1(CreateAggregate1Command command) throws Exception {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateAggregate1Command command) throws Exception {
             apply(new Aggregate1CreatedEvent(command.getId()));
-            createNew(Aggregate2.class, () -> new Aggregate2(command.getAggregate2Id()));
+            createNew(Aggregate2.class, () -> new Aggregate2(command.getAggregate2Id(), command.isRequireResource()));
         }
 
         @EventSourcingHandler
-        public void on(Aggregate1CreatedEvent event) throws Exception {
+        public void on(Aggregate1CreatedEvent event) {
             this.id = event.getId();
         }
     }
@@ -197,13 +248,26 @@ class FixtureTest_SpawningNewAggregate {
         public Aggregate2() {
         }
 
-        Aggregate2(String id) {
-            apply(new Aggregate2CreatedEvent(id));
+        Aggregate2(String id, boolean requireResource) {
+            if (requireResource) {
+                apply(new Aggregate2CreatedWithResourceEvent(id));
+            } else {
+                apply(new Aggregate2CreatedEvent(id));
+            }
         }
 
         @EventSourcingHandler
         public void on(Aggregate2CreatedEvent event) {
             this.id = event.getId();
         }
+
+        @EventSourcingHandler
+        public void on(Aggregate2CreatedWithResourceEvent event, Resource resource) {
+            this.id = event.getId();
+        }
+    }
+
+    private static class Resource {
+
     }
 }

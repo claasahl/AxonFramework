@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RollbackConfigurationTypeTest {
 
     @Test
-    void testAnyExceptionsRollback() {
+    void anyExceptionsRollback() {
         RollbackConfiguration testSubject = RollbackConfigurationType.ANY_THROWABLE;
         assertTrue(testSubject.rollBackOn(new RuntimeException()));
         assertTrue(testSubject.rollBackOn(new Exception()));
@@ -35,7 +35,7 @@ class RollbackConfigurationTypeTest {
     }
 
     @Test
-    void testUncheckedExceptionsRollback() {
+    void uncheckedExceptionsRollback() {
         RollbackConfiguration testSubject = RollbackConfigurationType.UNCHECKED_EXCEPTIONS;
         assertTrue(testSubject.rollBackOn(new RuntimeException()));
         assertFalse(testSubject.rollBackOn(new Exception()));
@@ -43,7 +43,7 @@ class RollbackConfigurationTypeTest {
     }
 
     @Test
-    void testRuntimeExceptionsRollback() {
+    void runtimeExceptionsRollback() {
         RollbackConfiguration testSubject = RollbackConfigurationType.RUNTIME_EXCEPTIONS;
         assertTrue(testSubject.rollBackOn(new RuntimeException()));
         assertFalse(testSubject.rollBackOn(new Exception()));

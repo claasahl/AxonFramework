@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,6 @@ import java.util.function.Predicate;
  * @since 4.0
  */
 public abstract class BuilderUtils {
-
-    private static final String EMPTY_STRING = "";
 
     private BuilderUtils() {
         // Utility class
@@ -116,6 +114,16 @@ public abstract class BuilderUtils {
      * @param exceptionMessage the message for the exception.
      */
     public static void assertNonEmpty(String string, String exceptionMessage) {
-        assertThat(string, s -> Objects.nonNull(s) && !EMPTY_STRING.equals(s), exceptionMessage);
+        assertThat(string, StringUtils::nonEmptyOrNull, exceptionMessage);
+    }
+    /**
+     * Assert that the given {@code string} does not equals an empty String. If not, an {@link
+     * AxonConfigurationException} is thrown containing the provided {@code exceptionMessage}.
+     *
+     * @param string           the value to assert
+     * @param exceptionMessage the message for the exception.
+     */
+    public static void assertNonBlank(String string, String exceptionMessage) {
+        assertThat(string, StringUtils::nonEmpty, exceptionMessage);
     }
 }

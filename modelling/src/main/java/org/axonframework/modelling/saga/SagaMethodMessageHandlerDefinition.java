@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,9 +21,10 @@ import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 
 import java.lang.reflect.InvocationTargetException;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import jakarta.annotation.Nonnull;
 
 import static java.lang.String.format;
 
@@ -37,24 +38,34 @@ import static java.lang.String.format;
  */
 public class SagaMethodMessageHandlerDefinition implements HandlerEnhancerDefinition {
 
-    private Map<Class<? extends AssociationResolver>, AssociationResolver> associationResolverMap;
+    private final Map<Class<? extends AssociationResolver>, AssociationResolver> associationResolverMap;
 
+    /**
+     * Constructs a default {@link SagaMethodMessageHandlerDefinition}.
+     */
     public SagaMethodMessageHandlerDefinition() {
-        this.associationResolverMap = new HashMap<>();
+        this.associationResolverMap = new ConcurrentHashMap<>();
     }
 
-    @SuppressWarnings("unchecked")
     @Override
-    public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        Optional<Map<String, Object>> annotationAttributes = original.annotationAttributes(SagaEventHandler.class);
-        SagaCreationPolicy creationPolicy = original.annotationAttributes(StartSaga.class)
-                .map(attr -> ((boolean)attr.getOrDefault("forceNew", false)) ? SagaCreationPolicy.ALWAYS : SagaCreationPolicy.IF_NONE_FOUND).orElse(SagaCreationPolicy.NONE);
-
-        return annotationAttributes
-                .map(attr -> doWrapHandler(original, creationPolicy, (String) attr.get("keyName"),
-                                           (String) attr.get("associationProperty"),
-                                           (Class<? extends AssociationResolver>) attr.get("associationResolver")))
-                .orElse(original);
+    public @Nonnull <T> MessageHandlingMember<T> wrapHandler(@Nonnull MessageHandlingMember<T> original) {
+        Optional<String> keyName = original.attribute("SagaEventHandler.keyName");
+        Optional<String> associationProperty = original.attribute("SagaEventHandler.associationProperty");
+        Optional<Class<? extends AssociationResolver>> associationResolver = original.attribute(
+                "SagaEventHandler.associationResolver");
+        if (keyName.isPresent() && associationProperty.isPresent() && associationResolver.isPresent()) {
+            Optional<Boolean> optionalForceNew = original.attribute("StartSaga.forceNew");
+            SagaCreationPolicy creationPolicy = optionalForceNew
+                    .map(forceNew -> forceNew ? SagaCreationPolicy.ALWAYS : SagaCreationPolicy.IF_NONE_FOUND)
+                    .orElse(SagaCreationPolicy.NONE);
+            return doWrapHandler(original,
+                                 creationPolicy,
+                                 keyName.get(),
+                                 associationProperty.get(),
+                                 associationResolver.get());
+        } else {
+            return original;
+        }
     }
 
     private <T> MessageHandlingMember<T> doWrapHandler(MessageHandlingMember<T> original,
@@ -64,9 +75,9 @@ public class SagaMethodMessageHandlerDefinition implements HandlerEnhancerDefini
         String associationKey = associationKey(associationKeyName, associationPropertyName);
         AssociationResolver associationResolver = findAssociationResolver(associationResolverClass);
         associationResolver.validate(associationPropertyName, original);
-        boolean endingHandler = original.hasAnnotation(EndSaga.class);
-        return new SagaMethodMessageHandlingMember<>(original, creationPolicy, associationKey, associationPropertyName,
-                                                     associationResolver, endingHandler);
+        return new SagaMethodMessageHandlingMember<>(
+                original, creationPolicy, associationKey, associationPropertyName, associationResolver
+        );
     }
 
     private String associationKey(String keyName, String associationProperty) {
@@ -74,18 +85,22 @@ public class SagaMethodMessageHandlerDefinition implements HandlerEnhancerDefini
     }
 
     private AssociationResolver findAssociationResolver(Class<? extends AssociationResolver> associationResolverClass) {
-        return this.associationResolverMap.computeIfAbsent(associationResolverClass, this::instantiateAssociationResolver);
+        return this.associationResolverMap.computeIfAbsent(
+                associationResolverClass, this::instantiateAssociationResolver
+        );
     }
 
     private AssociationResolver instantiateAssociationResolver(
-            Class<? extends AssociationResolver> associationResolverClass) {
+            Class<? extends AssociationResolver> associationResolverClass
+    ) {
         try {
             return associationResolverClass.getConstructor().newInstance();
-        } catch (InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
+        } catch (InstantiationException | IllegalAccessException | NoSuchMethodException |
+                 InvocationTargetException e) {
             throw new AxonConfigurationException(format(
                     "`AssociationResolver` %s must define an accessible no-args constructor.",
-                    associationResolverClass.getName()), e
-            );
+                    associationResolverClass.getName()
+            ), e);
         }
     }
 }

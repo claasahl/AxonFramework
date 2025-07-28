@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@
 
 package org.axonframework.eventhandling;
 
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.annotation.ParameterResolver;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.lang.annotation.ElementType;
@@ -79,45 +81,48 @@ class TimestampParameterResolverFactoryTest {
     }
 
     @Test
-    void testResolvesToDateTimeWhenAnnotated() {
+    void resolvesToDateTimeWhenAnnotated() {
         ParameterResolver<Instant> resolver =
                 testSubject.createInstance(instantMethod, instantMethod.getParameters(), 0);
 
-        final EventMessage<Object> message = GenericEventMessage.asEventMessage("test");
-        assertTrue(resolver.matches(message));
-        assertEquals(message.getTimestamp(), resolver.resolveParameterValue(message));
+        final EventMessage<Object> message = EventTestUtils.asEventMessage("test");
+        ProcessingContext context = StubProcessingContext.forMessage(message);
+        assertTrue(resolver.matches(context));
+        assertEquals(message.getTimestamp(), resolver.resolveParameterValue(context));
     }
 
     @Test
-    void testResolvesToReadableInstantWhenAnnotated() {
+    void resolvesToReadableInstantWhenAnnotated() {
         ParameterResolver<Instant> resolver =
                 testSubject.createInstance(temporalMethod, temporalMethod.getParameters(), 0);
 
-        final EventMessage<Object> message = GenericEventMessage.asEventMessage("test");
-        assertTrue(resolver.matches(message));
-        assertEquals(message.getTimestamp(), resolver.resolveParameterValue(message));
+        final EventMessage<Object> message = EventTestUtils.asEventMessage("test");
+        ProcessingContext context = StubProcessingContext.forMessage(message);
+        assertTrue(resolver.matches(context));
+        assertEquals(message.getTimestamp(), resolver.resolveParameterValue(context));
     }
 
     @Test
-    void testIgnoredWhenNotAnnotated() {
+    void ignoredWhenNotAnnotated() {
         ParameterResolver resolver =
                 testSubject.createInstance(nonAnnotatedInstantMethod, nonAnnotatedInstantMethod.getParameters(), 0);
         assertNull(resolver);
     }
 
     @Test
-    void testIgnoredWhenWrongType() {
+    void ignoredWhenWrongType() {
         ParameterResolver resolver = testSubject.createInstance(stringMethod, stringMethod.getParameters(), 0);
         assertNull(resolver);
     }
 
     @Test
-    void testResolvesToDateTimeWhenAnnotatedWithMetaAnnotation() {
+    void resolvesToDateTimeWhenAnnotatedWithMetaAnnotation() {
         Parameter[] parameters = metaAnnotatedMethod.getParameters();
         ParameterResolver<?> resolver = testSubject.createInstance(metaAnnotatedMethod, parameters, 0);
-        final EventMessage<Object> message = GenericEventMessage.asEventMessage("test");
-        assertTrue(resolver.matches(message), "Resolver should be a match for message " + message);
-        assertEquals(message.getTimestamp(), resolver.resolveParameterValue(message));
+        final EventMessage<Object> message = EventTestUtils.asEventMessage("test");
+        ProcessingContext context = StubProcessingContext.forMessage(message);
+        assertTrue(resolver.matches(context), "Resolver should be a match for message " + message);
+        assertEquals(message.getTimestamp(), resolver.resolveParameterValue(context));
     }
 
     @Retention(RetentionPolicy.RUNTIME)

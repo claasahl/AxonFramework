@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,27 +22,26 @@ import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.SagaRepository;
 
-import java.io.Serializable;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
- * Saga Repository implementation that adds caching behavior to the repository it wraps. Both associations and sagas
- * are cached, making loading them faster. Commits and adds are always delegated to the wrapped repository. Loads are
- * only delegated if the cache does not contain the necessary entries.
- * <p/>
- * Updating associations involves a read and a write, which are performed atomically. Therefore, it is unsafe to add or
- * remove specific associations outside of this instance. Obviously, clearing and evictions are safe.
+ * Saga Repository implementation that adds caching behavior to the repository it wraps. Both associations and sagas are
+ * cached, making loading them faster. Commits and adds are always delegated to the wrapped repository. Loads are only
+ * delegated if the cache does not contain the necessary entries.
+ * <p>
+ * Updating associations involves a read and write, which are performed atomically. Therefore, it is unsafe to add or
+ * remove specific associations outside this instance. Obviously, clearing and evictions are safe.
  *
+ * @param <T> The saga type
  * @author Allard Buijze
  * @since 2.0
  */
 public class CachingSagaStore<T> implements SagaStore<T> {
 
     private final SagaStore<T> delegate;
-    // This Cache guarded by "associationsCacheLock"
     private final Cache associationsCache;
     private final Cache sagaCache;
 
@@ -67,8 +66,7 @@ public class CachingSagaStore<T> implements SagaStore<T> {
      * The {@code delegateSagaStore} of type {@link SagaStore}, the {@code associationsCache} and {@code sagaCache}
      * (both of type {@link Cache}) are <b>hard requirements</b> and as such should be provided.
      *
-     * @param <T> a generic specifying the Saga type contained in this
-     *            {@link SagaRepository } implementation
+     * @param <T> a generic specifying the Saga type contained in this {@link SagaRepository } implementation
      * @return a Builder to be able to create a {@link CachingSagaStore}
      */
     public static <T> Builder<T> builder() {
@@ -78,13 +76,14 @@ public class CachingSagaStore<T> implements SagaStore<T> {
     @Override
     public Set<String> findSagas(Class<? extends T> sagaType, AssociationValue associationValue) {
         final String key = cacheKey(associationValue, sagaType);
-        // this is a dirty read, but a cache should be thread safe anyway
-        Set<String> associations = associationsCache.get(key);
-        if (associations == null) {
-            associations = delegate.findSagas(sagaType, associationValue);
-            associationsCache.put(key, associations);
-        }
-        return new HashSet<>(associations);
+        return associationsCache.computeIfAbsent(
+                key,
+                () -> {
+                    // We copy the original collection in a thread-safe implementation, since the original might be
+                    // changed while the SagaManager is reading it using the insertSaga/deleteSaga methods.
+                    return new ConcurrentSkipListSet<>(delegate.findSagas(sagaType, associationValue));
+                }
+        );
     }
 
     @Override
@@ -115,13 +114,16 @@ public class CachingSagaStore<T> implements SagaStore<T> {
         delegate.deleteSaga(sagaType, sagaIdentifier, associationValues);
     }
 
-    private void removeAssociationValueFromCache(Class<?> sagaType, String sagaIdentifier,
+    private void removeAssociationValueFromCache(Class<?> sagaType,
+                                                 String sagaIdentifier,
                                                  AssociationValue associationValue) {
         String key = cacheKey(associationValue, sagaType);
-        Set<String> associations = associationsCache.get(key);
-        if (associations != null && associations.remove(sagaIdentifier)) {
-            associationsCache.put(key, associations);
-        }
+        associationsCache.computeIfPresent(key, associations -> {
+            //noinspection unchecked
+            ((Set<String>) associations).remove(sagaIdentifier);
+            //noinspection unchecked
+            return ((Set<String>) associations).isEmpty() ? null : associations;
+        });
     }
 
     /**
@@ -132,19 +134,23 @@ public class CachingSagaStore<T> implements SagaStore<T> {
      * @param sagaIdentifier    the identifier of the saga
      * @param sagaType          the type of the saga
      */
-    protected void addCachedAssociations(Iterable<AssociationValue> associationValues, String sagaIdentifier,
+    protected void addCachedAssociations(Iterable<AssociationValue> associationValues,
+                                         String sagaIdentifier,
                                          Class<?> sagaType) {
         for (AssociationValue associationValue : associationValues) {
             String key = cacheKey(associationValue, sagaType);
-            Set<String> identifiers = associationsCache.get(key);
-            if (identifiers != null && identifiers.add(sagaIdentifier)) {
-                associationsCache.put(key, identifiers);
-            }
+            associationsCache.computeIfPresent(key, identifiers -> {
+                //noinspection unchecked
+                ((Set<String>) identifiers).add(sagaIdentifier);
+                return identifiers;
+            });
         }
     }
 
     @Override
-    public void updateSaga(Class<? extends T> sagaType, String sagaIdentifier, T saga,
+    public void updateSaga(Class<? extends T> sagaType,
+                           String sagaIdentifier,
+                           T saga,
                            AssociationValues associationValues) {
         sagaCache.put(sagaIdentifier, new CacheEntry<>(saga, associationValues.asSet()));
         delegate.updateSaga(sagaType, sagaIdentifier, saga, associationValues);
@@ -229,7 +235,7 @@ public class CachingSagaStore<T> implements SagaStore<T> {
         }
     }
 
-    private static class CacheEntry<T> implements Entry<T>, Serializable {
+    private static class CacheEntry<T> implements Entry<T> {
 
         private final T saga;
         private final Set<AssociationValue> associationValues;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,5 +66,17 @@ public abstract class ExceptionUtils {
     @SuppressWarnings("unchecked")
     public static <T extends Throwable> Optional<T> findException(Throwable exception, Class<T> exceptionClass) {
         return findException(exception, exceptionClass::isInstance).map(e -> (T) e);
+    }
+
+    /**
+     * Indicates whether the given {@code failure} is clearly non-transient. Non-transient exceptions indicate
+     * that the handling of the message will fail in the same way if retried
+     *
+     * @param failure the exception that occurred while processing a message
+     * @return {@code true} if the exception is clearly non-transient
+     */
+    public static boolean isExplicitlyNonTransient(Throwable failure) {
+        return failure instanceof AxonNonTransientException
+                || (failure.getCause() != null && isExplicitlyNonTransient(failure.getCause()));
     }
 }

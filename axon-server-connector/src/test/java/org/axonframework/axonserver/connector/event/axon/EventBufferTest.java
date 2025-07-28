@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.axonframework.axonserver.connector.event.axon;
 import com.google.protobuf.ByteString;
 import io.axoniq.axonserver.connector.event.impl.BufferedEventStream;
 import io.axoniq.axonserver.grpc.SerializedObject;
+import io.axoniq.axonserver.grpc.control.ClientIdentification;
 import io.axoniq.axonserver.grpc.event.Event;
 import io.axoniq.axonserver.grpc.event.EventWithToken;
 import io.grpc.stub.ClientCallStreamObserver;
@@ -30,24 +31,16 @@ import org.axonframework.eventhandling.TrackedEventMessage;
 import org.axonframework.serialization.upcasting.event.EventUpcaster;
 import org.axonframework.serialization.upcasting.event.IntermediateEventRepresentation;
 import org.axonframework.serialization.xml.XStreamSerializer;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.mockito.stubbing.Answer;
+import org.junit.jupiter.api.*;
+import org.mockito.stubbing.*;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isA;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class to verify the implementation of the {@link EventBuffer} class.
@@ -57,7 +50,7 @@ import static org.mockito.Mockito.when;
  */
 class EventBufferTest {
 
-    private final static XStreamSerializer SERIALIZER = TestSerializer.secureXStreamSerializer();
+    private final static XStreamSerializer SERIALIZER = TestSerializer.xStreamSerializer();
 
     private static final org.axonframework.serialization.SerializedObject<byte[]> SERIALIZED_OBJECT =
             SERIALIZER.serialize("some object", byte[].class);
@@ -93,7 +86,10 @@ class EventBufferTest {
                         (Stream<IntermediateEventRepresentation>) invocationOnMock.getArguments()[0]
                 );
 
-        eventStream = new BufferedEventStream(0, 100, 1, false);
+        ClientIdentification clientId = ClientIdentification.newBuilder()
+                                                            .setClientId("some-client-id")
+                                                            .build();
+        eventStream = new BufferedEventStream(clientId, 0, 100, 1, false);
         //noinspection unchecked
         eventStream.beforeStart(mock(ClientCallStreamObserver.class));
         testSubject = new EventBuffer(eventStream, stubUpcaster, SERIALIZER, false);
@@ -101,7 +97,7 @@ class EventBufferTest {
 
     @Test
     @Timeout(value = 450, unit = TimeUnit.MILLISECONDS)
-    void testDataUpcastAndDeserialized() {
+    void dataUpcastAndDeserialized() {
         assertFalse(testSubject.hasNextAvailable());
         eventStream.onNext(TEST_EVENT_WITH_TOKEN);
         assertTrue(testSubject.hasNextAvailable());
@@ -122,11 +118,12 @@ class EventBufferTest {
     }
 
     @Test
-    void testHasNextAvailableThrowsAxonServerExceptionWhenStreamFailed() {
+    void hasNextAvailableThrowsAxonServerExceptionWhenStreamFailed() {
         TestException testException = new TestException();
         eventStream.onError(testException);
 
-        AxonServerException actual = assertThrows(AxonServerException.class, () -> testSubject.hasNextAvailable(0, TimeUnit.SECONDS));
+        AxonServerException actual =
+                assertThrows(AxonServerException.class, () -> testSubject.hasNextAvailable(0, TimeUnit.SECONDS));
         assertEquals(testException, actual.getCause());
 
         // a second attempt should still throw the exception

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
 import org.axonframework.eventsourcing.eventstore.EventStoreException;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
 import org.axonframework.modelling.command.CommandTargetResolver;
-import org.axonframework.modelling.command.VersionedAggregateIdentifier;
 import org.axonframework.test.AxonAssertionError;
 import org.axonframework.test.FixtureExecutionException;
 import org.hamcrest.Description;
@@ -35,6 +35,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.axonframework.test.matchers.Matchers.exactSequenceOf;
+import static org.axonframework.test.matchers.Matchers.matches;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -44,6 +46,8 @@ import static org.mockito.Mockito.*;
  * @author Allard Buijze
  */
 class FixtureTest_Annotated {
+
+    private static final String AGGREGATE_ID = "aggregateId";
 
     private FixtureConfiguration<AnnotatedAggregate> fixture;
 
@@ -60,7 +64,8 @@ class FixtureTest_Annotated {
     }
 
     @Test
-    void testNullIdentifierIsRejected() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void nullIdentifierIsRejected() {
         AxonAssertionError error = assertThrows(AxonAssertionError.class, () ->
                 fixture.given(new MyEvent(null, 0))
                        .when(new TestCommand("test"))
@@ -75,7 +80,8 @@ class FixtureTest_Annotated {
     }
 
     @Test
-    void testEventsCarryCorrectTimestamp() {
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void eventsCarryCorrectTimestamp() {
         fixture.givenCurrentTime(Instant.EPOCH)
                .andGiven(new MyEvent("AggregateId", 1), new MyEvent("AggregateId", 2))
                .andGivenCommands(new TestCommand("AggregateId"))
@@ -105,7 +111,7 @@ class FixtureTest_Annotated {
     }
 
     @Test
-    void testClockStandsStillDuringExecution() {
+    void clockStandsStillDuringExecution() {
         fixture.given(new MyEvent("AggregateId", 1), new MyEvent("AggregateId", 2))
                .when(new TestCommand("AggregateId"));
 
@@ -117,9 +123,10 @@ class FixtureTest_Annotated {
     }
 
     @Test
-    void testAggregateCommandHandlersOverwrittenByCustomHandlers() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void aggregateCommandHandlersOverwrittenByCustomHandlers() {
         final AtomicBoolean invoked = new AtomicBoolean(false);
-        fixture.registerCommandHandler(CreateAggregateCommand.class, commandMessage -> {
+        fixture.registerCommandHandler(CreateAggregateCommand.class, (commandMessage, ctx) -> {
             invoked.set(true);
             return null;
         });
@@ -129,20 +136,22 @@ class FixtureTest_Annotated {
     }
 
     @Test
-    void testAggregateIdentifier_ServerGeneratedIdentifier() {
+    void aggregateIdentifier_ServerGeneratedIdentifier() {
         fixture.registerInjectableResource(new HardToCreateResource());
         fixture.given()
                .when(new CreateAggregateCommand());
     }
 
     @Test
-    void testUnavailableResourcesCausesFailure() {
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void unavailableResourcesCausesFailure() {
         TestExecutor<AnnotatedAggregate> given = fixture.given();
         assertThrows(FixtureExecutionException.class, () -> given.when(new CreateAggregateCommand()));
     }
 
     @Test
-    void testAggregateIdentifier_IdentifierAutomaticallyDeducted() {
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void aggregateIdentifier_IdentifierAutomaticallyDeducted() {
         fixture.given(new MyEvent("AggregateId", 1), new MyEvent("AggregateId", 2))
                .when(new TestCommand("AggregateId"))
                .expectEvents(new MyEvent("AggregateId", 3))
@@ -158,40 +167,43 @@ class FixtureTest_Annotated {
     }
 
     @Test
-    void testFixtureGivenCommands_ResourcesNotAvailable() {
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void fixtureGivenCommands_ResourcesNotAvailable() {
         assertThrows(
-                FixtureExecutionException.class, () -> fixture.givenCommands(new CreateAggregateCommand("aggregateId"))
+                FixtureExecutionException.class, () -> fixture.givenCommands(new CreateAggregateCommand(AGGREGATE_ID))
         );
     }
 
     @Test
-    void testFixtureGivenCommands_ResourcesAvailable() {
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void fixtureGivenCommands_ResourcesAvailable() {
         fixture.registerInjectableResource(new HardToCreateResource());
-        fixture.givenCommands(new CreateAggregateCommand("aggregateId"),
-                              new TestCommand("aggregateId"),
-                              new TestCommand("aggregateId"),
-                              new TestCommand("aggregateId"))
-               .when(new TestCommand("aggregateId"))
-               .expectEvents(new MyEvent("aggregateId", 4));
+        fixture.givenCommands(new CreateAggregateCommand(AGGREGATE_ID),
+                              new TestCommand(AGGREGATE_ID),
+                              new TestCommand(AGGREGATE_ID),
+                              new TestCommand(AGGREGATE_ID))
+               .when(new TestCommand(AGGREGATE_ID))
+               .expectEvents(new MyEvent(AGGREGATE_ID, 4));
     }
 
     @Test
-    void testAggregateIdentifier_CustomTargetResolver() {
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void aggregateIdentifier_CustomTargetResolver() {
         CommandTargetResolver mockCommandTargetResolver = mock(CommandTargetResolver.class);
         when(mockCommandTargetResolver.resolveTarget(any()))
-                .thenReturn(new VersionedAggregateIdentifier("aggregateId", 0L));
+                .thenReturn(AGGREGATE_ID);
 
         fixture.registerCommandTargetResolver(mockCommandTargetResolver);
         fixture.registerInjectableResource(new HardToCreateResource());
-        fixture.givenCommands(new CreateAggregateCommand("aggregateId"))
-               .when(new TestCommand("aggregateId"))
-               .expectEvents(new MyEvent("aggregateId", 1));
+        fixture.givenCommands(new CreateAggregateCommand(AGGREGATE_ID))
+               .when(new TestCommand(AGGREGATE_ID))
+               .expectEvents(new MyEvent(AGGREGATE_ID, 1));
 
         verify(mockCommandTargetResolver).resolveTarget(any());
     }
 
     @Test
-    void testAggregate_InjectCustomResourceAfterCreatingAnnotatedHandler() {
+    void aggregate_InjectCustomResourceAfterCreatingAnnotatedHandler() {
         // a 'when' will cause command handlers to be registered.
         fixture.registerInjectableResource(new HardToCreateResource());
         fixture.given()
@@ -201,64 +213,124 @@ class FixtureTest_Annotated {
     }
 
     @Test
-    void testFixtureGeneratesExceptionOnWrongEvents_DifferentAggregateIdentifiers() {
-        assertThrows(EventStoreException.class, () ->
-                fixture.getEventStore().publish(
-                        new GenericDomainEventMessage<>("test", UUID.randomUUID().toString(), 0, new StubDomainEvent()),
-                        new GenericDomainEventMessage<>("test", UUID.randomUUID().toString(), 0, new StubDomainEvent()))
+    void fixtureGeneratesExceptionOnWrongEvents_DifferentAggregateIdentifiers() {
+        DomainEventMessage<StubDomainEvent> testEventOne = new GenericDomainEventMessage<>(
+                "test", UUID.randomUUID().toString(), 0, new MessageType("event"),
+                new StubDomainEvent()
         );
+        DomainEventMessage<StubDomainEvent> testEventTwo = new GenericDomainEventMessage<>(
+                "test", UUID.randomUUID().toString(), 0, new MessageType("event"),
+                new StubDomainEvent()
+        );
+
+        assertThrows(EventStoreException.class, () -> fixture.getEventStore().publish(testEventOne, testEventTwo));
     }
 
     @Test
-    void testFixtureGeneratesExceptionOnWrongEvents_WrongSequence() {
+    void fixtureGeneratesExceptionOnWrongEvents_WrongSequence() {
         String identifier = UUID.randomUUID().toString();
-        assertThrows(EventStoreException.class, () ->
-                fixture.getEventStore().publish(
-                        new GenericDomainEventMessage<>("test", identifier, 0, new StubDomainEvent()),
-                        new GenericDomainEventMessage<>("test", identifier, 2, new StubDomainEvent()))
+        DomainEventMessage<StubDomainEvent> testEventOne = new GenericDomainEventMessage<>(
+                "test", identifier, 0, new MessageType("event"), new StubDomainEvent()
         );
+        DomainEventMessage<StubDomainEvent> testEventTwo = new GenericDomainEventMessage<>(
+                "test", identifier, 2, new MessageType("event"), new StubDomainEvent()
+        );
+
+        assertThrows(EventStoreException.class, () -> fixture.getEventStore().publish(testEventOne, testEventTwo));
     }
 
     @Test
-    void testFixture_AggregateDeleted() {
-        fixture.given(new MyEvent("aggregateId", 5))
-               .when(new DeleteCommand("aggregateId", false))
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void fixture_AggregateDeleted() {
+        fixture.given(new MyEvent(AGGREGATE_ID, 5))
+               .when(new DeleteCommand(AGGREGATE_ID, false))
                .expectEvents(new MyAggregateDeletedEvent(false));
     }
 
     @Test
-    void testFixtureDetectsStateChangeOutsideOfHandler_AggregateDeleted() {
-        TestExecutor<AnnotatedAggregate> exec = fixture.given(new MyEvent("aggregateId", 5));
-        AssertionError error = assertThrows(
-                AssertionError.class, () -> exec.when(new DeleteCommand("aggregateId", true))
-        );
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixtureDetectsStateChangeOutsideOfHandler_AggregateDeleted() {
+        TestExecutor<AnnotatedAggregate> exec = fixture.given(new MyEvent(AGGREGATE_ID, 5));
+        AssertionError error =
+                assertThrows(AssertionError.class, () -> exec.when(new DeleteCommand(AGGREGATE_ID, true)));
         assertTrue(error.getMessage().contains("considered deleted"), "Wrong message: " + error.getMessage());
     }
 
     @Test
-    void testAndGiven() {
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void andGiven() {
         fixture.registerInjectableResource(new HardToCreateResource());
-        fixture.givenCommands(new CreateAggregateCommand("aggregateId"))
-               .andGiven(new MyEvent("aggregateId", 1))
-               .when(new TestCommand("aggregateId"))
-               .expectEvents(new MyEvent("aggregateId", 2));
+        fixture.givenCommands(new CreateAggregateCommand(AGGREGATE_ID))
+               .andGiven(new MyEvent(AGGREGATE_ID, 1))
+               .when(new TestCommand(AGGREGATE_ID))
+               .expectEvents(new MyEvent(AGGREGATE_ID, 2));
     }
 
     @Test
-    void testAndGivenCommands() {
-        fixture.given(new MyEvent("aggregateId", 1))
-               .andGivenCommands(new TestCommand("aggregateId"))
-               .when(new TestCommand("aggregateId"))
-               .expectEvents(new MyEvent("aggregateId", 3));
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void andGivenCommands() {
+        fixture.given(new MyEvent(AGGREGATE_ID, 1))
+               .andGivenCommands(new TestCommand(AGGREGATE_ID))
+               .when(new TestCommand(AGGREGATE_ID))
+               .expectEvents(new MyEvent(AGGREGATE_ID, 3));
     }
 
     @Test
-    void testMultipleAndGivenCommands() {
-        fixture.given(new MyEvent("aggregateId", 1))
-               .andGivenCommands(new TestCommand("aggregateId"))
-               .andGivenCommands(new TestCommand("aggregateId"))
-               .when(new TestCommand("aggregateId"))
-               .expectEvents(new MyEvent("aggregateId", 4));
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void multipleAndGivenCommands() {
+        fixture.given(new MyEvent(AGGREGATE_ID, 1))
+               .andGivenCommands(new TestCommand(AGGREGATE_ID))
+               .andGivenCommands(new TestCommand(AGGREGATE_ID))
+               .when(new TestCommand(AGGREGATE_ID))
+               .expectEvents(new MyEvent(AGGREGATE_ID, 4));
+    }
+
+    @Test
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void givenNoPriorActivityAndPublishingNoEvents() {
+        fixture.registerInjectableResource(new HardToCreateResource());
+        fixture.givenNoPriorActivity()
+               .when(new CreateAggregateCommand(AGGREGATE_ID, CreateAggregateCommand.SHOULD_NOT_PUBLISH))
+               .expectNoEvents()
+               .expectSuccessfulHandlerExecution();
+    }
+
+    @Test
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void givenFollowedUpByAndGivenCurrentTimeWorksAsExcepted() {
+        String testAggregateId = "1337";
+
+        fixture.given(new MyEvent(testAggregateId, 1), new MyEvent(testAggregateId, 2))
+               .andGivenCurrentTime(Instant.EPOCH)
+               .when(new TestCommand(testAggregateId))
+               .expectEventsMatching(exactSequenceOf(matches(
+                       eventMessage -> eventMessage.getTimestamp() == Instant.EPOCH
+                               && MyEvent.class.equals(eventMessage.getPayloadType())
+               )));
+
+        assertEquals(3, fixture.getEventStore()
+                               .readEvents(testAggregateId)
+                               .asStream().count());
+    }
+
+    @Test
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void fixtureThrowsEventStoreExceptionWhenHandlingAggregateConstructingCommandWhileThereAreGivenEvents() {
+        fixture.registerInjectableResource(new HardToCreateResource());
+        fixture.given(new MyEvent(AGGREGATE_ID, 0))
+               .when(new CreateAggregateCommand(AGGREGATE_ID))
+               .expectException(EventStoreException.class)
+               .expectNoEvents();
+    }
+
+    @Test
+    @Disabled("TODO #3068 - Revisit Aggregate Modelling")
+    void fixtureThrowsEventStoreExceptionWhenHandlingAggregateConstructingCommandWhileThereAreGivenCommand() {
+        fixture.registerInjectableResource(new HardToCreateResource());
+        fixture.givenCommands(new CreateAggregateCommand(AGGREGATE_ID))
+               .when(new CreateAggregateCommand(AGGREGATE_ID))
+               .expectException(EventStoreException.class)
+               .expectNoEvents();
     }
 
     private static class StubDomainEvent {

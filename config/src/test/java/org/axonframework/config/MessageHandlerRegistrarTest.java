@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ class MessageHandlerRegistrarTest {
     private static final Registration TEST_REGISTRATION_IMPLEMENTATION = () -> false;
 
     @Test
-    void testStartThrowsAxonConfigurationExceptionForCreatingNullMessageHandler(@Mock Configuration config) {
+    void startThrowsAxonConfigurationExceptionForCreatingNullMessageHandler(@Mock LegacyConfiguration config) {
         MessageHandlerRegistrar testSubject = new MessageHandlerRegistrar(
                 () -> config, c -> null, (c, msgHandler) -> TEST_REGISTRATION_IMPLEMENTATION
         );
@@ -47,7 +47,7 @@ class MessageHandlerRegistrarTest {
     }
 
     @Test
-    void testStartRegistersCreatedMessageHandler(@Mock Configuration config) {
+    void startRegistersCreatedMessageHandler(@Mock LegacyConfiguration config) {
         AtomicBoolean isCreated = new AtomicBoolean(false);
         AtomicBoolean isRegistered = new AtomicBoolean(false);
 
@@ -65,22 +65,8 @@ class MessageHandlerRegistrarTest {
         assertTrue(isRegistered.get());
     }
 
-    /**
-     * The thrown {@link NullPointerException} will always be wrapped in a {@link org.axonframework.lifecycle.LifecycleHandlerInvocationException}
-     * since the {@link MessageHandlerRegistrar#shutdown()} will be wrapped in a {@link LifecycleHandler}.
-     */
     @Test
-    void testShutdownThrowsNullPointerExceptionIfRegistrationDidNotHappen(@Mock Configuration config) {
-        MessageHandlerRegistrar testSubject = new MessageHandlerRegistrar(
-                () -> config, c -> new SomeMessageHandler(),
-                (c, msgHandler) -> TEST_REGISTRATION_IMPLEMENTATION
-        );
-
-        assertThrows(NullPointerException.class, testSubject::shutdown);
-    }
-
-    @Test
-    void testShutdownCancelsMessageHandlerRegistration(@Mock Configuration config) {
+    void shutdownCancelsMessageHandlerRegistration(@Mock LegacyConfiguration config) {
         AtomicBoolean isCanceled = new AtomicBoolean(false);
 
         MessageHandlerRegistrar testSubject = new MessageHandlerRegistrar(
@@ -95,6 +81,23 @@ class MessageHandlerRegistrarTest {
         testSubject.shutdown();
 
         assertTrue(isCanceled.get());
+    }
+
+    @Test
+    void shutdownDoesNotThrowExceptionsIfWhenTheRegistrarHasNotStartedYet(@Mock LegacyConfiguration config) {
+        AtomicBoolean isCanceled = new AtomicBoolean(false);
+
+        MessageHandlerRegistrar testSubject = new MessageHandlerRegistrar(
+                () -> config,
+                c -> new SomeMessageHandler(),
+                (c, msgHandler) -> () -> {
+                    isCanceled.set(true);
+                    return false;
+                }
+        );
+
+        assertDoesNotThrow(testSubject::shutdown);
+        assertFalse(isCanceled.get());
     }
 
     private static class SomeMessageHandler {

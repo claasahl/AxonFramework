@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ public class EventProcessorTask implements Runnable {
                 processNextTask();
                 processedItems++;
                 // Continue processing if there is no rescheduling involved and there are events in the queue, or if yielding failed
-                mayContinue = (processedItems < itemsAtStart && !taskQueue.isEmpty()) || !yield();
+                mayContinue = (processedItems < itemsAtStart && !taskQueue.isEmpty()) || !yieldProcessing();
             }
         }
     }
@@ -117,7 +117,7 @@ public class EventProcessorTask implements Runnable {
      *
      * @return true if yielding succeeded, false otherwise.
      */
-    private synchronized boolean yield() {
+    private synchronized boolean yieldProcessing() {
         if (taskQueue.isEmpty()) {
             cleanUp();
         } else {

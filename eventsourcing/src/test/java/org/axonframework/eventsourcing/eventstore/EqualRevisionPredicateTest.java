@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ package org.axonframework.eventsourcing.eventstore;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.eventhandling.DomainEventData;
 import org.axonframework.eventhandling.GenericDomainEventEntry;
+import org.axonframework.eventsourcing.utils.TestSerializer;
 import org.axonframework.serialization.AnnotationRevisionResolver;
 import org.axonframework.serialization.Revision;
-import org.axonframework.serialization.xml.XStreamSerializer;
 import org.junit.jupiter.api.*;
 
 import java.time.Instant;
@@ -35,31 +35,31 @@ class EqualRevisionPredicateTest {
 
     @BeforeEach
     void setUp() {
-        testSubject = new EqualRevisionPredicate(new AnnotationRevisionResolver(), XStreamSerializer.builder().build());
+        testSubject = new EqualRevisionPredicate(new AnnotationRevisionResolver(), TestSerializer.xStreamSerializer());
     }
 
     @Test
-    void testSameRevisionForAggregateAndPayload() {
+    void sameRevisionForAggregateAndPayload() {
         assertTrue(testSubject.test(createEntry(WithAnnotationAggregate.class.getName(), "2.3-TEST")));
     }
 
     @Test
-    void testDifferentRevisionsForAggregateAndPayload() {
+    void differentRevisionsForAggregateAndPayload() {
         assertFalse(testSubject.test(createEntry(WithAnnotationAggregate.class.getName(), "2.3-TEST-DIFFERENT")));
     }
 
     @Test
-    void testNoRevisionForAggregateAndPayload() {
+    void noRevisionForAggregateAndPayload() {
         assertTrue(testSubject.test(createEntry(WithoutAnnotationAggregate.class.getName())));
     }
 
     @Test
-    void testNoRevisionForPayload() {
+    void noRevisionForPayload() {
         assertFalse(testSubject.test(createEntry(WithAnnotationAggregate.class.getName())));
     }
 
     @Test
-    void testNoRevisionForAggregate() {
+    void noRevisionForAggregate() {
         assertFalse(testSubject.test(createEntry(WithoutAnnotationAggregate.class.getName(), "2.3-TEST")));
     }
 
@@ -74,11 +74,11 @@ class EqualRevisionPredicateTest {
     }
 
     @Revision("2.3-TEST")
-    private class WithAnnotationAggregate {
+    private static class WithAnnotationAggregate {
 
     }
 
-    private class WithoutAnnotationAggregate {
+    private static class WithoutAnnotationAggregate {
 
     }
 }

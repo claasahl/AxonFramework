@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,14 @@
 
 package org.axonframework.eventhandling;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import org.axonframework.common.Priority;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.annotation.AbstractAnnotatedParameterResolverFactory;
 import org.axonframework.messaging.annotation.ParameterResolver;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 
 /**
@@ -57,17 +60,18 @@ public final class SequenceNumberParameterResolverFactory extends
      */
     public static class SequenceNumberParameterResolver implements ParameterResolver<Long> {
 
+        @Nullable
         @Override
-        public Long resolveParameterValue(Message message) {
-            if (message instanceof DomainEventMessage) {
-                return ((DomainEventMessage) message).getSequenceNumber();
+        public Long resolveParameterValue(@Nonnull ProcessingContext context) {
+            if (Message.fromContext(context) instanceof DomainEventMessage<?> domainEventMessage) {
+                return domainEventMessage.getSequenceNumber();
             }
             return null;
         }
 
         @Override
-        public boolean matches(Message message) {
-            return message instanceof DomainEventMessage;
+        public boolean matches(@Nonnull ProcessingContext context) {
+            return Message.fromContext(context) instanceof DomainEventMessage;
         }
     }
 }

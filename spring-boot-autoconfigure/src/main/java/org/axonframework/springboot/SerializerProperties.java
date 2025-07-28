@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,6 +120,11 @@ public class SerializerProperties {
      */
     public enum SerializerType {
         /**
+         * Uses Avro based serializer to serialize objects into bytes as specified by Avro Specification using
+         * single object encoding.
+         */
+        AVRO,
+        /**
          * Uses the XStream based serializer, which is the default serializer. This serializer will serialize an object
          * into XML. The serialized format is not highly interoperable, but the XStream based serializer is capable
          * of serializing just about any object. This makes it a very suitable implementation to use as the "general
@@ -133,12 +138,12 @@ public class SerializerProperties {
          */
         JACKSON,
         /**
-         * Uses the Java Serialization API (see {@link java.io.ObjectOutputStream}) to write objects. The Java
-         * serializer's output is not interoperable and should really be only used in very specific cases. It is not
-         * recommended to use this serializer as an Event Serializer, as it could cause Events to be stored in format
-         * that is difficult to upcast when the structure of Events changes.
+         * Uses Jackson's {@link com.fasterxml.jackson.dataformat.cbor.databind.CBORMapper} to serialize objects into CBOR.
+         * This format is not human-readable, but can save on the size of messages. When using this Serializer, make
+         * sure your tables are BLOBs, not CLOBs, as converting the {@code byte[]} to a {@code String} will corrupt the
+         * data.
          */
-        JAVA,
+        CBOR,
         /**
          * Defines that the default serializer should be used. For "general serializer", this means an XStream based
          * serializer. For the "message serializer", this means the "general serializer" is used. Similarly, the "event

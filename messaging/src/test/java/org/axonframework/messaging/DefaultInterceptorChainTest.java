@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package org.axonframework.messaging;
 
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
+import org.junit.jupiter.api.*;
 
 import static java.util.Arrays.asList;
-import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -31,35 +31,40 @@ import static org.mockito.Mockito.*;
  */
 class DefaultInterceptorChainTest {
 
-    private UnitOfWork<Message<?>> unitOfWork;
-    private MessageHandler<Message<?>> mockHandler;
+    private LegacyUnitOfWork<Message<?>> unitOfWork;
+    private MessageHandler<Message<?>, Message<Object>> mockHandler;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() throws Exception {
-        unitOfWork = new DefaultUnitOfWork<>(null);
+        unitOfWork = new LegacyDefaultUnitOfWork<>(null);
         mockHandler = mock(MessageHandler.class);
-        when(mockHandler.handle(isA(Message.class))).thenReturn("Result");
+        when(mockHandler.handleSync(isA(Message.class), any())).thenReturn("Result");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void testChainWithDifferentProceedCalls() throws Exception {
-        MessageHandlerInterceptor interceptor1 = (unitOfWork, interceptorChain) -> {
-            unitOfWork.transformMessage(m -> new GenericMessage<>("testing"));
-            return interceptorChain.proceed();
+    void chainWithDifferentProceedCalls() throws Exception {
+        MessageHandlerInterceptor interceptor1 = (unitOfWork, context, interceptorChain) -> {
+            unitOfWork.transformMessage(m -> new GenericMessage<>(
+                    new MessageType("message"), "testing"
+            ));
+            return interceptorChain.proceedSync(context);
         };
-        MessageHandlerInterceptor interceptor2 = (unitOfWork, interceptorChain) -> interceptorChain.proceed();
+        MessageHandlerInterceptor interceptor2 = (unitOfWork, context, interceptorChain) -> interceptorChain.proceedSync(
+                context);
 
 
-        unitOfWork.transformMessage(m -> new GenericMessage<>("original"));
+        unitOfWork.transformMessage(m -> new GenericMessage<>(
+                new MessageType("message"), "original"
+        ));
         DefaultInterceptorChain testSubject = new DefaultInterceptorChain(
                 unitOfWork, asList(interceptor1, interceptor2), mockHandler
         );
 
-        String actual = (String) testSubject.proceed();
+        String actual = (String) testSubject.proceedSync(StubProcessingContext.forUnitOfWork(unitOfWork));
 
         assertSame("Result", actual);
-        verify(mockHandler).handle(argThat(x -> (x != null) && x.getPayload().equals("testing")));
+        verify(mockHandler).handleSync(argThat(x -> (x != null) && x.getPayload().equals("testing")), any());
     }
 }

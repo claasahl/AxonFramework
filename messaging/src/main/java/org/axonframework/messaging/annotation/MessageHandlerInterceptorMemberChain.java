@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,18 @@
 
 package org.axonframework.messaging.annotation;
 
+import jakarta.annotation.Nonnull;
+import org.axonframework.messaging.GenericMessage;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.LegacyMessageSupportingContext;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 /**
- * Interface to interact with a MessageHandlingMember instance through a chain of interceptors, which were
- * used to build up this chain. Unlike regular handlers, interceptors have the ability to act on messages on their
- * way to the regular handler, and have the ability to block these messages.
+ * Interface to interact with a MessageHandlingMember instance through a chain of interceptors, which were used to build
+ * up this chain. Unlike regular handlers, interceptors have the ability to act on messages on their way to the regular
+ * handler, and have the ability to block these messages.
  *
  * @param <T> The type that declares the handlers in this chain
  * @author Allard Buijze
@@ -34,12 +40,39 @@ public interface MessageHandlerInterceptorMemberChain<T> {
      * {@code handler} on the given {@code target} instance. The result of this invocation is the result as given by the
      * {@code handler}, possibly modified by any of the interceptors in this chain.
      *
-     * @param message The message to pass through the interceptor chain
-     * @param target  The target instance to invoke the interceptors and handlers on
-     * @param handler The actual handler to invoke once all interceptors have received the message
-     *
-     * @return the result as returned by the handlers or interceptors
-     * @throws Exception any exception thrown by the handler or any of the interceptors
+     * @param message The message to pass through the interceptor chain.
+     * @param context The context in which the message is being handled.
+     * @param target  The target instance to invoke the interceptors and handlers on.
+     * @param handler The actual handler to invoke once all interceptors have received the message.
+     * @return The result as returned by the handlers or interceptors.
+     * @throws Exception Any exception thrown by the handler or any of the interceptors.
      */
-    Object handle(Message<?> message, T target, MessageHandlingMember<? super T> handler) throws Exception;
+    @Deprecated
+    Object handleSync(@Nonnull Message<?> message,
+                      @Nonnull ProcessingContext context,
+                      @Nonnull T target,
+                      @Nonnull MessageHandlingMember<? super T> handler
+    ) throws Exception;
+
+
+    @Deprecated
+    default Object handleSync(@Nonnull Message<?> message,
+                              @Nonnull T target,
+                              @Nonnull MessageHandlingMember<? super T> handler
+    ) throws Exception {
+        ProcessingContext processingContext = new LegacyMessageSupportingContext(message);
+        return handleSync(message, processingContext, target, handler);
+    }
+
+    default MessageStream<?> handle(@Nonnull Message<?> message,
+                                    @Nonnull ProcessingContext context,
+                                    @Nonnull T target,
+                                    @Nonnull MessageHandlingMember<? super T> handler) {
+        try {
+            Object result = handleSync(message, context, target, handler);
+            return MessageStream.just(new GenericMessage<>(new MessageType(result.getClass()), result));
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
 }

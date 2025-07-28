@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,14 @@
 
 package org.axonframework.integrationtests.loopbacktest;
 
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.commandhandling.gateway.CommandGateway;
-import org.axonframework.config.Configuration;
-import org.axonframework.config.DefaultConfigurer;
+import org.axonframework.config.LegacyConfiguration;
+import org.axonframework.config.LegacyDefaultConfigurer;
 import org.axonframework.eventsourcing.EventSourcingHandler;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.inmemory.LegacyInMemoryEventStorageEngine;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.EntityId;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 import org.junit.jupiter.api.*;
@@ -30,13 +32,17 @@ import static org.axonframework.modelling.command.AggregateLifecycle.apply;
 
 class NestedUowRollbackTest {
 
+    // This ensures we do not wire Axon Server components
+    private static final boolean DO_NOT_AUTO_LOCATE_CONFIGURER_MODULES = false;
+
     @Test
-    void testDispatchCommand() {
-        Configuration c = DefaultConfigurer.defaultConfiguration()
-                                           .configureAggregate(TestAggregate.class)
-                                           .registerCommandHandler(x -> new Handler())
-                                           .configureEmbeddedEventStore(x -> new InMemoryEventStorageEngine())
-                                           .buildConfiguration();
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void dispatchCommand() {
+        LegacyConfiguration c = LegacyDefaultConfigurer.defaultConfiguration(DO_NOT_AUTO_LOCATE_CONFIGURER_MODULES)
+                                                       .configureAggregate(TestAggregate.class)
+                                                       .registerCommandHandler(x -> new Handler())
+                                                       .configureEmbeddedEventStore(x -> new LegacyInMemoryEventStorageEngine())
+                                                       .buildConfiguration();
 
         c.start();
         CommandGateway gw = c.commandGateway();
@@ -50,7 +56,8 @@ class NestedUowRollbackTest {
         String id;
 
         @CommandHandler
-        public TestAggregate(Create cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(Create cmd) {
             apply(cmd);
         }
 
@@ -58,7 +65,7 @@ class NestedUowRollbackTest {
         }
 
         @EventSourcingHandler
-        public void handle(Create evt) {
+        public void on(Create evt) {
             id = evt.id;
         }
 

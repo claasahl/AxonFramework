@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.axonframework.springboot;
 
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.HashMap;
@@ -47,17 +48,17 @@ public class EventProcessorProperties {
     }
 
     /**
-     * The processing mode of the processor.
+     * The processing modes of an {@link org.axonframework.eventhandling.EventProcessor}.
      */
     public enum Mode {
         /**
-         * Indicates a Tracking Processor should be used.
+         * Indicates a {@link org.axonframework.eventhandling.SubscribingEventProcessor} should be used.
          */
-        TRACKING,
+        SUBSCRIBING,
         /**
-         * Indicates a Subscribing Processor should be used.
+         * Indicates a {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor} should be used.
          */
-        SUBSCRIBING
+        POOLED
     }
 
     public static class ProcessorSettings {
@@ -65,25 +66,27 @@ public class EventProcessorProperties {
         /**
          * Sets the source for this processor.
          * <p>
-         * Defaults to streaming from the {@link org.axonframework.eventsourcing.eventstore.EventStore} when the {@link
-         * #mode} is set to {@link Mode#TRACKING} and to subscribing to the {@link org.axonframework.eventhandling.EventBus}
-         * when the {@link #mode} is set to {@link Mode#SUBSCRIBING}.
+         * Defaults to streaming from the {@link LegacyEventStore} when the
+         * {@link #mode} is set to {@link Mode#POOLED}, and to subscribing to the
+         * {@link org.axonframework.eventhandling.EventBus} when the {@link #mode} is set to {@link Mode#SUBSCRIBING}.
          */
         private String source;
 
         /**
-         * Indicates whether this processor should be Tracking, or Subscribing its source. Defaults to Tracking.
+         * Indicates whether this processor should be Pooled, or Subscribing its source. Defaults to
+         * {@link Mode#POOLED}.
          */
-        private Mode mode = Mode.TRACKING;
+        private Mode mode = Mode.POOLED;
 
         /**
          * Indicates the number of segments that should be created when the processor starts for the first time.
-         * Defaults to 1.
+         * Defaults to 16 for a {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}.
          */
-        private int initialSegmentCount = 1;
+        private Integer initialSegmentCount = null;
 
         /**
-         * The interval between attempts to claim tokens by a {@link org.axonframework.eventhandling.TrackingEventProcessor}.
+         * The interval between attempts to claim tokens by a
+         * {@link org.axonframework.eventhandling.StreamingEventProcessor}.
          * <p>
          * Defaults to 5000 milliseconds.
          */
@@ -98,7 +101,8 @@ public class EventProcessorProperties {
 
         /**
          * The maximum number of threads the processor should process events with. Defaults to the number of initial
-         * segments if this is not further specified. Defaults to 1.
+         * segments if this is not further specified. Defaults to 4 for a
+         * {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}.
          */
         private int threadCount = -1;
 
@@ -116,8 +120,14 @@ public class EventProcessorProperties {
         private String sequencingPolicy;
 
         /**
-         * Returns the name of the bean that should be used as source for Event Messages. If not provided, the {@link
-         * org.axonframework.eventhandling.EventBus} is used as source.
+         * The {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue} settings that will be used for
+         * this processing group.
+         */
+        private Dlq dlq = new Dlq();
+
+        /**
+         * Returns the name of the bean that should be used as source for Event Messages. If not provided, the
+         * {@link org.axonframework.eventhandling.EventBus} is used as source.
          *
          * @return the name of the bean that should be used as source for Event Messages.
          */
@@ -135,7 +145,7 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Returns the type of processor to configure.
+         * Returns the type of processor to configure. Defaults to {@link Mode#POOLED}.
          *
          * @return the type of processor to configure.
          */
@@ -144,7 +154,7 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Sets the type of processor that should be configured. Defaults to "subscribing".
+         * Sets the type of processor that should be configured. Defaults to {@link Mode#TRACKING}.
          *
          * @param mode the type of processor that should be configured.
          */
@@ -153,30 +163,35 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Returns the number of initial segments that should be created, if no segments are already present. Is also
-         * used as the thread count if it is not further specified.
+         * Returns the number of initial segments that should be created, if no segments are already present. Defaults
+         * to 16 for a {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}.
+         * <p>
+         * If the {@link #threadCount} is not further specified, the initial segment count will be used for this too.
          *
          * @return the number of initial segments that should be created.
          */
-        public int getInitialSegmentCount() {
+        public Integer getInitialSegmentCount() {
             return initialSegmentCount;
         }
 
         /**
-         * Sets the number of initial segments that should be created, if no segments are already present. Defaults to
-         * 1. Will also be used as the thread count if it is not further specified.
+         * Sets the number of initial segments that should be created, if no segments are already present. Defaults to 16
+         * for a {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}.
+         * <p>
+         * If the {@link #threadCount} is not further specified, the initial segment count will be used for this too.
          *
          * @param initialSegmentCount the number of initial segments that should be created.
          */
-        public void setInitialSegmentCount(int initialSegmentCount) {
+        public void setInitialSegmentCount(Integer initialSegmentCount) {
             this.initialSegmentCount = initialSegmentCount;
         }
 
         /**
-         * Returns the interval between attempts to claim tokens by a {@link org.axonframework.eventhandling.TrackingEventProcessor}.
-         * Defaults to 5000 milliseconds.
+         * Returns the interval between attempts to claim tokens by a
+         * {@link org.axonframework.eventhandling.StreamingEventProcessor}. Defaults to 5000 milliseconds.
          *
-         * @return the interval between attempts to claim tokens by a {@link org.axonframework.eventhandling.TrackingEventProcessor}.
+         * @return the interval between attempts to claim tokens by a
+         * {@link org.axonframework.eventhandling.StreamingEventProcessor}.
          */
         public long getTokenClaimInterval() {
             return tokenClaimInterval;
@@ -186,15 +201,15 @@ public class EventProcessorProperties {
          * Sets the time to wait after a failed attempt to claim any token, before making another attempt. Defaults to
          * 5000 milliseconds.
          *
-         * @param tokenClaimInterval the interval between attempts to claim tokens by a {@link
-         *                           org.axonframework.eventhandling.TrackingEventProcessor}.
+         * @param tokenClaimInterval the interval between attempts to claim tokens by a
+         *                           {@link org.axonframework.eventhandling.StreamingEventProcessor}.
          */
         public void setTokenClaimInterval(long tokenClaimInterval) {
             this.tokenClaimInterval = tokenClaimInterval;
         }
 
         /**
-         * Returns the time unit used to define tokens claim interval. Defaults to MILLISECONDS.
+         * Returns the time unit used to define tokens claim interval. Defaults to {@link TimeUnit#MILLISECONDS}.
          *
          * @return the time unit used to defined tokens claim interval.
          */
@@ -204,7 +219,7 @@ public class EventProcessorProperties {
 
         /**
          * Sets the time unit used to defined tokens claim interval. It must be a valid value of {@link TimeUnit}.
-         * Defaults to MILLISECONDS.
+         * Defaults to {@link TimeUnit#MILLISECONDS}.
          *
          * @param tokenClaimIntervalTimeUnit the time unit used to defined tokens claim interval.
          */
@@ -213,21 +228,29 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Returns the number of threads to use to process Events, when in "tracking" mode. Defaults to the number of
-         * initial segments.
+         * Returns the number of threads to use to process Events, when using a
+         * {@link org.axonframework.eventhandling.StreamingEventProcessor} implementation. Defaults to the configured
+         * number of initial segments. If this field is not configured, the thread count defaults to 4 for a
+         * {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}.
          *
          * @return the number of threads to use to process Events.
          */
         public int getThreadCount() {
-            return threadCount < 0 ? initialSegmentCount : threadCount;
+            int defaultThreadCount = 1;
+            if (mode == Mode.POOLED) {
+                defaultThreadCount = initialSegmentCount != null ? initialSegmentCount : 4;
+            }
+            return threadCount < 0 ? defaultThreadCount : threadCount;
         }
 
         /**
-         * Sets the number of threads to use to process Events, when in "tracking" mode. Defaults to the number of
-         * initial segments.
+         * Sets the number of threads to use to process Events, when using a
+         * {@link org.axonframework.eventhandling.StreamingEventProcessor} implementation. Defaults to the configured
+         * number of initial segments. If this field is not configured, the thread count defaults to 4 for a
+         * {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}.
          * <p>
          * A provided {@code threadCount} < 0 will result in a number of threads equal to the configured number of
-         * {@link #setInitialSegmentCount(int) initial segments}.
+         * {@link #setInitialSegmentCount(Integer)}  initial segments.
          *
          * @param threadCount the number of threads to use to process Events.
          */
@@ -237,7 +260,7 @@ public class EventProcessorProperties {
 
         /**
          * Returns the maximum size of a processing batch. This is the number of events that a processor in "tracking"
-         * mode will attempt to read and process within a single Unit of Work / Transaction.
+         * and "pooled" mode will attempt to read and process within a single Unit of Work / Transaction.
          *
          * @return the maximum size of a processing batch.
          */
@@ -246,8 +269,8 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Sets the maximum size of a processing batch. This is the number of events that a processor in "tracking" mode
-         * will attempt to read and process within a single Unit of Work / Transaction. Defaults to 1.
+         * Sets the maximum size of a processing batch. This is the number of events that a processor in "tracking" and
+         * "pooled" mode will attempt to read and process within a single Unit of Work / Transaction. Defaults to 1.
          *
          * @param batchSize the maximum size of a processing batch.
          */
@@ -256,23 +279,151 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Returns the name of the bean that defines the Sequencing Policy for this processor.
+         * Returns the name of the bean that defines the {@link org.axonframework.eventhandling.async.SequencingPolicy}
+         * for this processor.
          *
-         * @return the name of the bean that defines the Sequencing Policy for this processor.
+         * @return the name of the bean that defines the {@link org.axonframework.eventhandling.async.SequencingPolicy}
+         * for this processor.
          */
         public String getSequencingPolicy() {
             return sequencingPolicy;
         }
 
         /**
-         * Sets the name of the bean that defines the Sequencing Policy for this processor. The Sequencing Policy
-         * describes which Events must be handled sequentially, and which can be handled concurrently. Defaults to a
-         * "SequentialPerAggregatePolicy".
+         * Sets the name of the bean that defines the {@link org.axonframework.eventhandling.async.SequencingPolicy} for
+         * this processor. The {@code SequencingPolicy} describes which Events must be handled sequentially, and which
+         * can be handled concurrently. Defaults to a
+         * {@link org.axonframework.eventhandling.async.SequentialPerAggregatePolicy}.
          *
-         * @param sequencingPolicy the name of the bean that defines the Sequencing Policy for this processor.
+         * @param sequencingPolicy the name of the bean that defines the
+         *                         {@link org.axonframework.eventhandling.async.SequencingPolicy} for this processor.
          */
         public void setSequencingPolicy(String sequencingPolicy) {
             this.sequencingPolicy = sequencingPolicy;
+        }
+
+        /**
+         * Retrieves the AutoConfiguration settings for the sequenced dead letter queue settings.
+         *
+         * @return the AutoConfiguration settings for the sequenced dead letter queue settings.
+         */
+        public Dlq getDlq() {
+            return dlq;
+        }
+
+        /**
+         * Defines the AutoConfiguration settings for the sequenced dead letter queue.
+         *
+         * @param dlq the sequenced dead letter queue settings for the sequenced dead letter queue.
+         */
+        public void setDlq(Dlq dlq) {
+            this.dlq = dlq;
+        }
+    }
+
+    public static class Dlq {
+
+        /**
+         * Enables creation and configuring a {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue}.
+         * Will be used to configure the {@code registerDeadLetterQueueProvider} such that only groups set to enabled
+         * will have a sequenced dead letter queue. Defaults to "false".
+         */
+        private boolean enabled = false;
+
+        /**
+         * The {@link DlqCache} settings that will be used for this dlq.
+         */
+        private DlqCache cache = new DlqCache();
+
+        /**
+         * Indicates whether creating and configuring a
+         * {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue} is enabled.
+         *
+         * @return true if creating the queue is enabled, false if otherwise
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        /**
+         * Enables (if {@code true}, default) or disables (if {@code false}) creating a
+         * {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue}.
+         *
+         * @param enabled whether to enable token store creation.
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        /**
+         * Retrieves the AutoConfiguration settings for the cache of the sequenced dead letter queue.
+         *
+         * @return the AutoConfiguration settings for the cache of the sequenced dead letter queue.
+         */
+        public DlqCache getCache() {
+            return cache;
+        }
+
+        /**
+         * Defines the AutoConfiguration settings for the cache of the sequenced dead letter queue.
+         *
+         * @param cache the cache settings for the sequenced dead letter.
+         */
+        public void setCache(DlqCache cache) {
+            this.cache = cache;
+        }
+    }
+
+    public static class DlqCache {
+
+        /**
+         * Enables caching the sequence identifiers on the
+         * {@link org.axonframework.eventhandling.deadletter.DeadLetteringEventHandlerInvoker}. This can prevent calls
+         * to the database to check whether a sequence is already present. Defaults to {@code false}.
+         */
+        private boolean enabled = false;
+
+        /**
+         * The amount of sequence identifiers to keep in memory. This setting is used per segment, and only when the
+         * {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue} is not empty. Defaults to
+         * {@code 1024}.
+         */
+        private int size = 1024;
+
+        /**
+         * Indicates whether using a cache is enabled.
+         *
+         * @return true if using a cache is enabled, false if otherwise.
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        /**
+         * Enables (if {@code true}, default) or disables (if {@code false}) using a cache.
+         *
+         * @param enabled whether to enable using a cache.
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        /**
+         * Returns the size of the sequence identifiers to keep in memory, per segment.
+         *
+         * @return the amount of sequence identifiers to keep in memory.
+         */
+        public int getSize() {
+            return size;
+        }
+
+        /**
+         * Set the amount of sequence identifiers to keep in memory, per segment.
+         *
+         * @param size the maximum size of the sequence identifiers which are not present.
+         */
+        public void setSize(int size) {
+            this.size = size;
         }
     }
 }

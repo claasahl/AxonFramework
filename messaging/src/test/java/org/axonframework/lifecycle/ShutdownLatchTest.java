@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2010-2023. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.axonframework.lifecycle;
 
 import org.junit.jupiter.api.*;
@@ -16,7 +32,7 @@ class ShutdownLatchTest {
     private final ShutdownLatch testSubject = new ShutdownLatch();
 
     @Test
-    void testInitializeCancelsEarlierShutdown() {
+    void initializeCancelsEarlierShutdown() {
         testSubject.registerActivity();
 
         CompletableFuture<Void> latch = testSubject.initiateShutdown();
@@ -26,14 +42,14 @@ class ShutdownLatchTest {
     }
 
     @Test
-    void testIncrementThrowsShutdownInProgressExceptionIfShuttingDown() {
+    void incrementThrowsShutdownInProgressExceptionIfShuttingDown() {
         testSubject.initiateShutdown();
 
         assertThrows(ShutdownInProgressException.class, testSubject::registerActivity);
     }
 
     @Test
-    void testDecrementCompletesWaitProcess() {
+    void decrementCompletesWaitProcess() {
         ShutdownLatch.ActivityHandle activityHandle = testSubject.registerActivity();
 
         CompletableFuture<Void> latch = testSubject.initiateShutdown();
@@ -46,19 +62,19 @@ class ShutdownLatchTest {
     }
 
     @Test
-    void testIsShuttingDownIsFalseForNonAwaitedLatch() {
+    void isShuttingDownIsFalseForNonAwaitedLatch() {
         assertFalse(testSubject.isShuttingDown());
     }
 
     @Test
-    void testInitiateShutdownOnEmptyLatchOpensImmediately() {
+    void initiateShutdownOnEmptyLatchOpensImmediately() {
         CompletableFuture<Void> latch = testSubject.initiateShutdown();
 
         assertTrue(latch.isDone());
     }
 
     @Test
-    void testIsShuttingDownIsTrueForAwaitedLatch() {
+    void isShuttingDownIsTrueForAwaitedLatch() {
         CompletableFuture<Void> latch = testSubject.initiateShutdown();
 
         assertTrue(testSubject.isShuttingDown());
@@ -66,7 +82,7 @@ class ShutdownLatchTest {
     }
 
     @Test
-    void testIsShuttingDownThrowsSuppliedExceptionForAwaitedLatch() {
+    void isShuttingDownThrowsSuppliedExceptionForAwaitedLatch() {
         CompletableFuture<Void> latch = testSubject.initiateShutdown();
 
         assertThrows(SomeException.class, () -> testSubject.ifShuttingDown(SomeException::new));
@@ -74,7 +90,7 @@ class ShutdownLatchTest {
     }
 
     @Test
-    void testSubsequentActivityHandleEndCallsDoNotInfluenceOtherHandles() {
+    void subsequentActivityHandleEndCallsDoNotInfluenceOtherHandles() {
         ShutdownLatch.ActivityHandle handleOne = testSubject.registerActivity();
         ShutdownLatch.ActivityHandle handleTwo = testSubject.registerActivity();
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,15 @@
 
 package org.axonframework.eventhandling;
 
+import jakarta.annotation.Nonnull;
+import org.axonframework.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageHandler;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Interface to be implemented by classes that can handle events.
@@ -28,8 +34,10 @@ import java.util.Objects;
  * @see DomainEventMessage
  * @see EventHandler
  * @since 0.1
+ * @deprecated Replace in favor of org.axonframework.eventhandling.EventHandler
  */
-public interface EventMessageHandler extends MessageHandler<EventMessage<?>> {
+@Deprecated // Replace in favor of org.axonframework.eventhandling.EventHandler
+public interface EventMessageHandler extends MessageHandler<EventMessage<?>, Message<Void>> {
 
     /**
      * Process the given event. The implementation may decide to process or skip the given event. It is highly
@@ -39,23 +47,35 @@ public interface EventMessageHandler extends MessageHandler<EventMessage<?>> {
      * @return the result of the event handler invocation. Is generally ignored
      * @throws Exception when an exception is raised during event handling
      */
-    Object handle(EventMessage<?> event) throws Exception;
+    Object handleSync(@Nonnull EventMessage<?> event, @Nonnull ProcessingContext context) throws Exception;
 
-    /**
-     * Performs any activities that are required to reset the state managed by handlers assigned to this handler.
-     */
-    default void prepareReset() {
+    default MessageStream<Message<Void>> handle(@Nonnull EventMessage<?> event, @Nonnull ProcessingContext context) {
+        try {
+            handleSync(event, context);
+            return MessageStream.empty();
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
     }
 
     /**
      * Performs any activities that are required to reset the state managed by handlers assigned to this handler.
      *
-     * @param resetContext a {@code R} used to support the reset operation
-     * @param <R>          the type of the provided {@code resetContext}
+     * @param context the {@code ProcessingContext} in which the reset is being performed.
      */
-    default <R> void prepareReset(R resetContext) {
+    default void prepareReset(ProcessingContext context) {
+    }
+
+    /**
+     * Performs any activities that are required to reset the state managed by handlers assigned to this handler.
+     *
+     * @param <R>               the type of the provided {@code resetContext}
+     * @param resetContext      a {@code R} used to support the reset operation
+     * @param context the {@code ProcessingContext} in which the reset is being performed.
+     */
+    default <R> void prepareReset(R resetContext, ProcessingContext context) {
         if (Objects.isNull(resetContext)) {
-            prepareReset();
+            prepareReset(context);
         } else {
             throw new UnsupportedOperationException(
                     "EventMessageHandler#prepareReset(R) is not implemented for a non-null reset context."
@@ -70,5 +90,19 @@ public interface EventMessageHandler extends MessageHandler<EventMessage<?>> {
      */
     default boolean supportsReset() {
         return true;
+    }
+
+    /**
+     * Returns the set of event payload types that this handler can handle.
+     * <p>
+     * The default implementation returns an empty set, indicating that the handler
+     * does not provide information about supported event types. Implementations should
+     * override this method to provide accurate type information.
+     *
+     * @return A set of classes representing the event payload types this handler can handle.
+     * @since 5.0.0
+     */
+    default Set<Class<?>> supportedEventTypes() {
+        return Set.of();
     }
 }

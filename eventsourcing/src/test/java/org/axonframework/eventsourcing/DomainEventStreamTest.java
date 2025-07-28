@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package org.axonframework.eventsourcing;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
-import org.axonframework.messaging.MetaData;
+import org.axonframework.messaging.MessageType;
 import org.junit.jupiter.api.*;
 
 import java.util.NoSuchElementException;
@@ -28,23 +28,27 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
+ * Test class validating the {@link DomainEventStream}.
+ *
  * @author Allard Buijze
  */
 class DomainEventStreamTest {
 
     @Test
-    void testPeek() {
-        DomainEventMessage event1 = new GenericDomainEventMessage<>("type", UUID.randomUUID().toString(), (long) 0,
-                                                                    "Mock contents", MetaData.emptyInstance());
-        DomainEventMessage event2 = new GenericDomainEventMessage<>("type", UUID.randomUUID().toString(), (long) 0,
-                                                                    "Mock contents", MetaData.emptyInstance());
+    void peek() {
+        DomainEventMessage<String> event1 = new GenericDomainEventMessage<>(
+                "type", UUID.randomUUID().toString(), 0L, new MessageType("event"), "Mock contents"
+        );
+        DomainEventMessage<String> event2 = new GenericDomainEventMessage<>(
+                "type", UUID.randomUUID().toString(), 0L, new MessageType("event"), "Mock contents"
+        );
         DomainEventStream testSubject = DomainEventStream.of(event1, event2);
         assertSame(event1, testSubject.peek());
         assertSame(event1, testSubject.peek());
     }
 
     @Test
-    void testPeek_EmptyStream() {
+    void peek_EmptyStream() {
         DomainEventStream testSubject = DomainEventStream.of();
         assertFalse(testSubject.hasNext());
         try {
@@ -56,11 +60,13 @@ class DomainEventStreamTest {
     }
 
     @Test
-    void testNextAndHasNext() {
-        DomainEventMessage event1 = new GenericDomainEventMessage<>("type", UUID.randomUUID().toString(), (long) 0,
-                                                                    "Mock contents", MetaData.emptyInstance());
-        DomainEventMessage event2 = new GenericDomainEventMessage<>("type", UUID.randomUUID().toString(), (long) 0,
-                                                                    "Mock contents", MetaData.emptyInstance());
+    void nextAndHasNext() {
+        DomainEventMessage<String> event1 = new GenericDomainEventMessage<>(
+                "type", UUID.randomUUID().toString(), 0L, new MessageType("event"), "Mock contents"
+        );
+        DomainEventMessage<String> event2 = new GenericDomainEventMessage<>(
+                "type", UUID.randomUUID().toString(), 0L, new MessageType("event"), "Mock contents"
+        );
         DomainEventStream testSubject = DomainEventStream.of(event1, event2);
         assertTrue(testSubject.hasNext());
         assertSame(event1, testSubject.next());
@@ -70,13 +76,13 @@ class DomainEventStreamTest {
     }
 
     @Test
-    void testNext_ReadBeyondEnd() {
-        DomainEventMessage event1 = new GenericDomainEventMessage<>("type", UUID.randomUUID().toString(), (long) 0,
-                                                                    "Mock contents", MetaData.emptyInstance());
-        DomainEventStream testSubject = DomainEventStream.of(event1);
+    void next_ReadBeyondEnd() {
+        DomainEventMessage<String> event = new GenericDomainEventMessage<>(
+                "type", UUID.randomUUID().toString(), 0L, new MessageType("event"), "Mock contents"
+        );
+        DomainEventStream testSubject = DomainEventStream.of(event);
         testSubject.next();
 
         assertThrows(NoSuchElementException.class, testSubject::next);
     }
-
 }

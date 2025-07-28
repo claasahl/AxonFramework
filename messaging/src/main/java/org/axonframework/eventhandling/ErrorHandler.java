@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.axonframework.eventhandling;
 
+import jakarta.annotation.Nonnull;
+
 /**
  * Interface of the error handler that will be invoked if event processing fails. The error handler is generally invoked
  * by an EventProcessor when the UnitOfWork created to coordinate the event processing was rolled back.
@@ -30,7 +32,7 @@ public interface ErrorHandler {
      * a serious error, for instance when the database transaction connected to the UnitOfWork can not be committed.
      * <p>
      * The error handler has the option to simply log or ignore the error. Depending on the type of EventProcessor this
-     * will put an end to the processing of any further events (in case of a {@link TrackingEventProcessor}) or simply
+     * will put an end to the processing of any further events (in case of a {@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}) or simply
      * skip over the list of given {@code failedEvents}.
      * <p>
      * Note that although the UnitOfWork and hence any related database transactions have been rolled back when the
@@ -40,6 +42,6 @@ public interface ErrorHandler {
      * @param errorContext Contextual information describing the error
      * @throws Exception if the handler decides to propagate the error
      */
-    void handleError(ErrorContext errorContext) throws Exception;
+    void handleError(@Nonnull ErrorContext errorContext) throws Exception;
 
 }

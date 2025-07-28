@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,12 +16,15 @@
 
 package org.axonframework.axonserver.connector;
 
-import org.axonframework.commandhandling.CommandHandler;
-import org.axonframework.config.Configuration;
-import org.axonframework.config.DefaultConfigurer;
-import org.axonframework.eventhandling.EventHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.commandhandling.gateway.CommandGateway;
+import org.axonframework.configuration.AxonConfiguration;
+import org.axonframework.configuration.MessagingConfigurer;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.eventsourcing.EventSourcingHandler;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,15 +40,24 @@ public class ServerConnectorRunner {
     private static final Logger logger = LoggerFactory.getLogger(ServerConnectorRunner.class);
 
     public static void main(String[] args) {
-        Configuration configuration = DefaultConfigurer.defaultConfiguration()
-                                                       .registerComponent(AxonServerConfiguration.class, c -> AxonServerConfiguration.builder().servers("localhost").build())
-                                                       .configureAggregate(MyAggregate.class)
-                                                       .eventProcessing(ep -> ep.registerEventHandler(c -> new MyEventHandler()))
-                                                       .start();
+        AxonConfiguration configuration =
+                MessagingConfigurer.create().componentRegistry(
+                                           cr -> cr.registerComponent(AxonServerConfiguration.class,
+                                                                      c -> AxonServerConfiguration.builder()
+                                                                                                  .servers(
+                                                                                                          "localhost")
+                                                                                                  .build())
+                                           // TODO #3499 Fix as part of referred to issue
+//                                                   .configureAggregate(MyAggregate.class)
+//                                                   .eventProcessing(ep -> ep.registerEventHandler(c -> new MyEventHandler()))
+                                   )
+                                   .start();
 
         try {
             logger.info("Sending command");
-            CompletableFuture<Object> result = configuration.commandGateway().send(new CreateMyAggregateCommand(UUID.randomUUID().toString()));
+            CompletableFuture<Object> result =
+                    configuration.getComponent(CommandGateway.class)
+                                 .send(new CreateMyAggregateCommand(UUID.randomUUID().toString()), null, Object.class);
             logger.info("Command sent, awaiting response...");
             result.join();
             logger.info("Result received. Press enter to shut down");
@@ -65,7 +77,8 @@ public class ServerConnectorRunner {
 
 
         @CommandHandler
-        public MyAggregate(CreateMyAggregateCommand command) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateMyAggregateCommand command) {
             apply(new MyAggregateCreatedEvent(command.getId()));
         }
 

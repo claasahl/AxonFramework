@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,9 +16,12 @@
 
 package org.axonframework.test.saga;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.eventhandling.EventBus;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.EventMessageHandler;
+import org.axonframework.messaging.unitofwork.LegacyMessageSupportingContext;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.axonframework.test.AxonAssertionError;
 import org.axonframework.test.matchers.FieldFilter;
 import org.hamcrest.Matcher;
@@ -26,6 +29,7 @@ import org.hamcrest.StringDescription;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static java.lang.String.format;
 import static org.axonframework.test.matchers.Matchers.*;
@@ -39,7 +43,7 @@ import static org.axonframework.test.saga.DescriptionUtils.describe;
  */
 public class EventValidator implements EventMessageHandler {
 
-    private final List<EventMessage> publishedEvents = new ArrayList<>();
+    private final List<EventMessage<?>> publishedEvents = new ArrayList<>();
     private final EventBus eventBus;
     private final FieldFilter fieldFilter;
     private boolean recording = false;
@@ -66,7 +70,7 @@ public class EventValidator implements EventMessageHandler {
             StringDescription actualDescription = new StringDescription();
             matcher.describeTo(expectedDescription);
             describe(publishedEvents, actualDescription);
-            throw new AxonAssertionError(format("Published events did not match.\nExpected:\n<%s>\n\nGot:\n<%s>\n",
+            throw new AxonAssertionError(format("Published events did not match.\nExpected <%s>,\n but got <%s>\n",
                                                 expectedDescription, actualDescription));
         }
     }
@@ -79,16 +83,16 @@ public class EventValidator implements EventMessageHandler {
     public void assertPublishedEvents(Object... expected) {
         if (publishedEvents.size() != expected.length) {
             throw new AxonAssertionError(format(
-                    "Got wrong number of events published. Expected <%s>, got <%s>",
-                    expected.length,
-                    publishedEvents.size()));
+                    "Got wrong number of events published.\nExpected <%s>,\n but got <%s>.",
+                    expected.length, publishedEvents.size()
+            ));
         }
 
         assertPublishedEventsMatching(payloadsMatching(exactSequenceOf(createEqualToMatchers(expected))));
     }
 
     @Override
-    public Object handle(EventMessage event) {
+    public Object handleSync(@Nonnull EventMessage<?> event, @Nonnull ProcessingContext context) {
         publishedEvents.add(event);
         return null;
     }
@@ -98,7 +102,7 @@ public class EventValidator implements EventMessageHandler {
      */
     public void startRecording() {
         if (!recording) {
-            eventBus.subscribe(eventMessages -> eventMessages.forEach(this::handle));
+            eventBus.subscribe(eventMessages -> eventMessages.forEach(m -> handleSync(m, new LegacyMessageSupportingContext(m))));
             recording = true;
         }
         publishedEvents.clear();
@@ -108,7 +112,7 @@ public class EventValidator implements EventMessageHandler {
     private Matcher<Object>[] createEqualToMatchers(Object[] expected) {
         List<Matcher<?>> matchers = new ArrayList<>(expected.length);
         for (Object event : expected) {
-            matchers.add(equalTo(unwrapEvent(event), fieldFilter));
+            matchers.add(deepEquals(unwrapEvent(event), fieldFilter));
         }
         return matchers.toArray(new Matcher[0]);
     }
@@ -122,5 +126,9 @@ public class EventValidator implements EventMessageHandler {
      */
     private Object unwrapEvent(Object event) {
         return event instanceof EventMessage ? ((EventMessage) event).getPayload() : event;
+    }
+
+    public Set<Class<?>> supportedEventTypes() {
+        return Set.of();
     }
 }

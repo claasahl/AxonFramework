@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,29 +18,33 @@ package org.axonframework.eventhandling.async;
 
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
-import org.axonframework.messaging.MetaData;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.MessageType;
+import org.junit.jupiter.api.*;
 
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
+ * Test class validating the {@link FullConcurrencyPolicy}.
+ *
  * @author Allard Buijze
  * @author Henrique Sena
  */
 class FullConcurrencyPolicyTest {
 
     @Test
-    void testSequencingIdentifier() {
+    void sequencingIdentifier() {
         FullConcurrencyPolicy testSubject = new FullConcurrencyPolicy();
-        assertNotNull(testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID())));
-        assertNotNull(testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID())));
-        assertNotNull(testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID())));
+        assertThat(testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID()))).isPresent();
+        assertThat(testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID()))).isPresent();
+        assertThat(testSubject.getSequenceIdentifierFor(newStubDomainEvent(UUID.randomUUID()))).isPresent();
     }
 
-    private DomainEventMessage newStubDomainEvent(Object aggregateIdentifier) {
-        return new GenericDomainEventMessage<>("type", aggregateIdentifier.toString(), (long) 0,
-                                                     new Object(), MetaData.emptyInstance());
+    private DomainEventMessage<Object> newStubDomainEvent(Object aggregateIdentifier) {
+        return new GenericDomainEventMessage<>(
+                "aggregateType", aggregateIdentifier.toString(), 0L,
+                new MessageType("event"), new Object()
+        );
     }
 }

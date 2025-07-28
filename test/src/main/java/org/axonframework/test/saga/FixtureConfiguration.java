@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import org.axonframework.commandhandling.CommandBus;
 import org.axonframework.commandhandling.CommandResultMessage;
 import org.axonframework.deadline.DeadlineMessage;
 import org.axonframework.eventhandling.EventBus;
+import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.ListenerInvocationErrorHandler;
 import org.axonframework.messaging.MessageDispatchInterceptor;
 import org.axonframework.messaging.MessageHandlerInterceptor;
@@ -34,6 +35,7 @@ import org.axonframework.test.matchers.FieldFilter;
 import org.axonframework.test.utils.CallbackBehavior;
 
 import java.time.Instant;
+import java.util.Map;
 
 
 /**
@@ -83,39 +85,6 @@ public interface FixtureConfiguration {
      * @see #registerResource(Object)
      */
     FixtureConfiguration registerParameterResolverFactory(ParameterResolverFactory parameterResolverFactory);
-
-    /**
-     * Creates a Command Gateway for the given {@code gatewayInterface} and registers that as a resource. The gateway
-     * will dispatch commands on the Command Bus contained in this Fixture, so that you can validate commands using
-     * {@link FixtureExecutionResult#expectDispatchedCommands(Object...)} and {@link
-     * FixtureExecutionResult#expectDispatchedCommandsMatching(org.hamcrest.Matcher)}.
-     * <p/>
-     * Note that you need to use {@link #setCallbackBehavior(org.axonframework.test.utils.CallbackBehavior)} to defined
-     * the behavior of commands when expecting return values. Alternatively, you can use {@link
-     * #registerCommandGateway(Class, Object)} to define behavior using a stub implementation.
-     *
-     * @param gatewayInterface The interface describing the gateway
-     * @param <T>              The gateway type
-     * @return the gateway implementation being registered as a resource.
-     */
-    <T> T registerCommandGateway(Class<T> gatewayInterface);
-
-    /**
-     * Creates a Command Gateway for the given {@code gatewayInterface} and registers that as a resource. The gateway
-     * will dispatch commands on the Command Bus contained in this Fixture, so that you can validate commands using
-     * {@link FixtureExecutionResult#expectDispatchedCommands(Object...)} and {@link
-     * FixtureExecutionResult#expectDispatchedCommandsMatching(org.hamcrest.Matcher)}.
-     * <p/>
-     * The behavior of the created gateway is defined by the given {@code stubImplementation}, if not null. Dispatched
-     * Commands are still recorded for verification. Note that only commands executed in the "when" phase are recorded,
-     * while the stub implementation may record activity during the "given" phase as well.
-     *
-     * @param gatewayInterface   The interface describing the gateway
-     * @param stubImplementation The stub or mock implementation defining behavior of the gateway
-     * @param <T>                The gateway type
-     * @return the gateway implementation being registered as a resource.
-     */
-    <T> T registerCommandGateway(Class<T> gatewayInterface, T stubImplementation);
 
     /**
      * Registers the given {@code fieldFilter}, which is used to define which Fields are used when comparing objects.
@@ -174,7 +143,8 @@ public interface FixtureConfiguration {
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration registerDeadlineDispatchInterceptor(
-            MessageDispatchInterceptor<DeadlineMessage<?>> deadlineDispatchInterceptor);
+            MessageDispatchInterceptor<? super DeadlineMessage<?>> deadlineDispatchInterceptor
+    );
 
     /**
      * Registers a deadline handler interceptor which will always be invoked before a deadline is handled to perform a
@@ -184,7 +154,25 @@ public interface FixtureConfiguration {
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration registerDeadlineHandlerInterceptor(
-            MessageHandlerInterceptor<DeadlineMessage<?>> deadlineHandlerInterceptor);
+            MessageHandlerInterceptor<? super DeadlineMessage<?>> deadlineHandlerInterceptor
+    );
+
+    /**
+     * Registers a {@link MessageHandlerInterceptor} for {@link EventMessage EventMessages}.
+     * <p>
+     * Will always be invoked before an event is handled to perform a task specified in the interceptor. Interceptors
+     * are invoked in the order they have been registered in.
+     *
+     * @param eventHandlerInterceptor the interceptor for handling {@link EventMessage EventMessages}
+     * @return The current {@link FixtureConfiguration}, for fluent interfacing.
+     */
+    default FixtureConfiguration registerEventHandlerInterceptor(
+            MessageHandlerInterceptor<? super EventMessage<?>> eventHandlerInterceptor
+    ) {
+        throw new UnsupportedOperationException(
+                "The FixtureConfiguration implementation does not support this operation"
+        );
+    }
 
     /**
      * Registers a callback to be invoked when the fixture execution starts recording. This happens right before
@@ -199,16 +187,32 @@ public interface FixtureConfiguration {
     FixtureConfiguration registerStartRecordingCallback(Runnable onStartRecordingCallback);
 
     /**
-     * Registers a {@link ListenerInvocationErrorHandler} to be set for the Saga to deal with exceptions being thrown
-     * from within Saga Event Handlers. Will be given to the {@link org.axonframework.modelling.saga.AnnotatedSagaManager}
-     * for the defined Saga type. Defaults to a {@link org.axonframework.eventhandling.LoggingErrorHandler}.
+     * Registers a {@link ListenerInvocationErrorHandler} to be set for the Saga to deal with exceptions being thrown from within Saga Event Handlers. Will be
+     * given to the {@link org.axonframework.modelling.saga.AnnotatedSagaManager} for the defined Saga type. Defaults to a {@link
+     * org.axonframework.eventhandling.LoggingErrorHandler} wrapped inside a {@link RecordingListenerInvocationErrorHandler}.
      *
-     * @param listenerInvocationErrorHandler to be set for the Saga to deal with exceptions being thrown from within
-     *                                       Saga Event Handlers
+     * @param listenerInvocationErrorHandler to be set for the Saga to deal with exceptions being thrown from within Saga Event Handlers
      * @return the current FixtureConfiguration, for fluent interfacing
      */
     FixtureConfiguration registerListenerInvocationErrorHandler(
             ListenerInvocationErrorHandler listenerInvocationErrorHandler);
+
+    /**
+     * Configure whether the fixture should suppress exceptions thrown during the given-phase. When {@code suppress} is
+     * {@code true}, the fixture moves on to the when-phase regardless of any exceptions thrown during the given-phase.
+     * <p>
+     * Note that setting this to {@code true} means the
+     * {@link #registerListenerInvocationErrorHandler(ListenerInvocationErrorHandler) registered}
+     * {@link ListenerInvocationErrorHandler} is not invoked during exception in the given-phase. Defaults to
+     * suppressing during given-phase exceptions.
+     *
+     * @param suppress A {@code boolean} describing whether the fixture should suppress failures during the
+     *                 given-phase.
+     * @return The current fixture, for fluent interfacing.
+     */
+    default FixtureConfiguration suppressExceptionInGivenPhase(boolean suppress) {
+        return this;
+    }
 
     /**
      * Registers a {@link ResourceInjector} within this fixture. This approach can be used if a custom {@code
@@ -264,6 +268,17 @@ public interface FixtureConfiguration {
      * @return an object that allows chaining of more given state
      */
     ContinuedGivenState givenAPublished(Object event);
+
+
+    /**
+     * Indicates that the given {@code event} with given {@code metaData} has been published in the past.
+     * This event is sent to the associated sagas.
+     *
+     * @param event The event to publish
+     * @param metaData The metadata to attach to the event
+     * @return an object that allows chaining of more given state
+     */
+    ContinuedGivenState givenAPublished(Object event, Map<String, String> metaData);
 
     /**
      * Indicates that no relevant activity has occurred in the past.

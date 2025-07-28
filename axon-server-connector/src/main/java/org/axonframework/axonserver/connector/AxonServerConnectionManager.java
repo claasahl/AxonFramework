@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,27 +18,27 @@ package org.axonframework.axonserver.connector;
 
 import io.axoniq.axonserver.connector.AxonServerConnection;
 import io.axoniq.axonserver.connector.AxonServerConnectionFactory;
-import io.axoniq.axonserver.connector.impl.ContextConnection;
 import io.axoniq.axonserver.connector.impl.ServerAddress;
 import io.axoniq.axonserver.grpc.control.NodeInfo;
 import io.grpc.Channel;
 import io.grpc.ManagedChannelBuilder;
-import io.grpc.netty.GrpcSslContexts;
+import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
+import org.axonframework.axonserver.connector.util.GrpcMessageSizeInterceptor;
 import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.config.TagsConfiguration;
+import org.axonframework.common.ObjectUtils;
 import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
-import org.axonframework.lifecycle.StartHandler;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 import javax.net.ssl.SSLException;
 
+import static org.axonframework.common.BuilderUtils.assertNonEmpty;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
@@ -46,9 +46,12 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * so by creating {@link Channel}s per context and providing them as the means to dispatch/receive messages.
  *
  * @author Marc Gathier
- * @since 4.0
+ * @since 4.0.0
  */
-public class AxonServerConnectionManager {
+public class AxonServerConnectionManager implements ConnectionManager {
+
+    private static final int DEFAULT_GRPC_PORT = 8124;
+    private static final int DEFAULT_MAX_MESSAGE_SIZE = 4194304;
 
     private final Map<String, AxonServerConnection> connections = new ConcurrentHashMap<>();
     private final AxonServerConnectionFactory connectionFactory;
@@ -58,10 +61,10 @@ public class AxonServerConnectionManager {
     private final long heartbeatTimeout;
 
     /**
-     * Instantiate a {@link AxonServerConnectionManager} based on the fields contained in the {@link Builder}, using the
+     * Instantiate a {@code AxonServerConnectionManager} based on the fields contained in the {@link Builder}, using the
      * given {@code connectionFactory} to obtain connections to AxonServer.
      *
-     * @param builder           the {@link Builder} used to instantiate a {@link AxonServerConnectionManager} instance
+     * @param builder           the {@link Builder} used to instantiate a {@code AxonServerConnectionManager} instance
      * @param connectionFactory a configured instance of the AxonServerConnectionFactory
      */
     protected AxonServerConnectionManager(Builder builder, AxonServerConnectionFactory connectionFactory) {
@@ -75,27 +78,28 @@ public class AxonServerConnectionManager {
     }
 
     /**
-     * Instantiate a Builder to be able to create an {@link AxonServerConnectionManager}.
+     * Instantiate a Builder to be able to create an {@code AxonServerConnectionManager}.
      * <p>
-     * The {@link TagsConfiguration} is defaulted to {@link TagsConfiguration#TagsConfiguration()}. The {@link
-     * AxonServerConfiguration} is a <b>hard requirements</b> and as such should be provided.
+     * The {@link Builder#routingServers(String) routingServers} default to {@code "localhost:8024"} and the
+     * {@link TagsConfiguration} is defaulted to {@link TagsConfiguration#TagsConfiguration()}. The
+     * {@link AxonServerConfiguration} is a <b>hard requirements</b> and as such should be provided.
      *
-     * @return a Builder to be able to create a {@link AxonServerConnectionManager}
+     * @return a Builder to be able to create a {@code AxonServerConnectionManager}
      */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Starts the {@link AxonServerConnectionManager}. Will enable heartbeat messages to be send to the connected Axon
-     * Server instance in the {@link Phase#INSTRUCTION_COMPONENTS} phase, if this has been enabled through the {@link
-     * AxonServerConfiguration.HeartbeatConfiguration#isEnabled()}.
+     * Starts the {@code AxonServerConnectionManager}. Will enable heartbeat messages to be sent to the connected Axon
+     * Server instance in the {@link Phase#INSTRUCTION_COMPONENTS} phase, if this has been enabled through the
+     * {@link AxonServerConfiguration.HeartbeatConfiguration#isEnabled()}.
      */
-    @StartHandler(phase = Phase.INSTRUCTION_COMPONENTS)
     public void start() {
         if (heartbeatEnabled) {
-            getConnection().controlChannel()
-                           .enableHeartbeat(heartbeatInterval, heartbeatTimeout, TimeUnit.MILLISECONDS);
+            // for backwards compatibility. Starting the ConnectionManager with heartbeat enabled should eagerly create
+            // a connection to Axon Server
+            getConnection();
         }
     }
 
@@ -115,13 +119,23 @@ public class AxonServerConnectionManager {
      * @return the {@link AxonServerConnection} used for the given {@code context} of this application.
      */
     public AxonServerConnection getConnection(String context) {
-        return connections.computeIfAbsent(context, connectionFactory::connect);
+        return connections.computeIfAbsent(context, this::createConnection);
+    }
+
+    private AxonServerConnection createConnection(String context) {
+        AxonServerConnection connection = connectionFactory.connect(context);
+        if (heartbeatEnabled) {
+            connection.controlChannel()
+                      .enableHeartbeat(heartbeatInterval, heartbeatTimeout, TimeUnit.MILLISECONDS);
+        }
+
+        return connection;
     }
 
     /**
      * Returns {@code true} if a gRPC channel for the specific context is opened between client and AxonServer.
      *
-     * @param context the (Bounded) Context for for which is verified the AxonServer connection through the gRPC
+     * @param context the (Bounded) Context for which is verified the AxonServer connection through the gRPC
      *                channel
      * @return if the gRPC channel is opened, false otherwise
      */
@@ -134,7 +148,6 @@ public class AxonServerConnectionManager {
      * Stops the Connection Manager, closing any active connections and preventing new connections from being created.
      * This shutdown operation is performed in the {@link Phase#EXTERNAL_CONNECTIONS} phase.
      */
-    @ShutdownHandler(phase = Phase.EXTERNAL_CONNECTIONS)
     public void shutdown() {
         connectionFactory.shutdown();
         disconnect();
@@ -170,27 +183,42 @@ public class AxonServerConnectionManager {
         return defaultContext;
     }
 
-    @Deprecated
-    public Channel getChannel() {
-        return ((ContextConnection) getConnection(defaultContext)).getManagedChannel();
-    }
-
-    @Deprecated
-    public Channel getChannel(String context) {
-        return ((ContextConnection) getConnection(context)).getManagedChannel();
+    @Override
+    public Map<String, Boolean> connections() {
+        return connections.entrySet()
+                          .stream()
+                          .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().isConnected()));
     }
 
     /**
      * Builder class to instantiate an {@link AxonServerConnectionManager}.
      * <p>
-     * The {@link TagsConfiguration} is defaulted to {@link TagsConfiguration#TagsConfiguration()}. The {@link
-     * AxonServerConfiguration} is a <b>hard requirements</b> and as such should be provided.
+     * The {@link Builder#routingServers(String) routingServers} default to {@code "localhost:8024"} and the
+     * {@link TagsConfiguration} is defaulted to {@link TagsConfiguration#TagsConfiguration()}. The
+     * {@link AxonServerConfiguration} is a <b>hard requirements</b> and as such should be provided.
      */
     public static class Builder {
 
+        private String routingServers;
         private AxonServerConfiguration axonServerConfiguration;
         private TagsConfiguration tagsConfiguration = new TagsConfiguration();
         private UnaryOperator<ManagedChannelBuilder<?>> channelCustomization;
+
+        /**
+         * Comma separated list of Axon Server locations. Each element is hostname or hostname:grpcPort. Defaults to
+         * {@code "localhost:8024"}.
+         *
+         * @param routingServers Comma separated list of Axon Server locations.
+         * @return The current Builder instance, for fluent interfacing.
+         */
+        public Builder routingServers(String routingServers) {
+            assertNonEmpty(
+                    routingServers,
+                    "Routing Servers should be a non-empty String of a comma-separated [hostname:grpcPort] entries"
+            );
+            this.routingServers = routingServers;
+            return this;
+        }
 
         /**
          * Sets the {@link AxonServerConfiguration} used to correctly configure connections between Axon clients and
@@ -223,8 +251,8 @@ public class AxonServerConnectionManager {
         }
 
         /**
-         * Registers the given {@code channelCustomization}, which configures the underling {@link
-         * ManagedChannelBuilder} used to set up connections to AxonServer.
+         * Registers the given {@code channelCustomization}, which configures the underling
+         * {@link ManagedChannelBuilder} used to set up connections to AxonServer.
          * <p>
          * This method may be used in case none of the operations on this Builder provide support for the required
          * feature.
@@ -234,19 +262,6 @@ public class AxonServerConnectionManager {
          */
         public Builder channelCustomizer(UnaryOperator<ManagedChannelBuilder<?>> channelCustomization) {
             this.channelCustomization = channelCustomization;
-            return this;
-        }
-
-        /**
-         * Sets the Axon Framework version resolver used in order to communicate the client version to send to Axon
-         * Server.
-         *
-         * @param axonFrameworkVersionResolver a string supplier that retrieve the current Axon Framework version
-         * @return the current Builder instance, for fluent interfacing
-         * @deprecated Not ued anymore
-         */
-        @Deprecated
-        public Builder axonFrameworkVersionResolver(Supplier<String> axonFrameworkVersionResolver) {
             return this;
         }
 
@@ -261,11 +276,13 @@ public class AxonServerConnectionManager {
             AxonServerConnectionFactory.Builder builder = AxonServerConnectionFactory.forClient(
                     axonServerConfiguration.getComponentName(), axonServerConfiguration.getClientId()
             );
-            List<NodeInfo> routingServers = axonServerConfiguration.routingServers();
-            if (!routingServers.isEmpty()) {
-                ServerAddress[] addresses = new ServerAddress[routingServers.size()];
+
+            this.routingServers = ObjectUtils.getOrDefault(routingServers, axonServerConfiguration.getServers());
+            List<NodeInfo> nodeInfos = mapToNodeInfos(routingServers);
+            if (!nodeInfos.isEmpty()) {
+                ServerAddress[] addresses = new ServerAddress[nodeInfos.size()];
                 for (int i = 0; i < addresses.length; i++) {
-                    NodeInfo routingServer = routingServers.get(i);
+                    NodeInfo routingServer = nodeInfos.get(i);
                     addresses[i] = new ServerAddress(routingServer.getHostName(), routingServer.getGrpcPort());
                 }
                 builder.routingServers(addresses);
@@ -286,7 +303,13 @@ public class AxonServerConnectionManager {
                 }
             }
 
-            builder.connectTimeout(axonServerConfiguration.getConnectTimeout(), TimeUnit.MILLISECONDS);
+            builder.connectTimeout(axonServerConfiguration.getConnectTimeout(), TimeUnit.MILLISECONDS)
+                   .reconnectInterval(axonServerConfiguration.getReconnectInterval(), TimeUnit.MILLISECONDS)
+                   .forceReconnectViaRoutingServers(axonServerConfiguration.isForceReconnectThroughServers())
+                   .threadPoolSize(axonServerConfiguration.getConnectionManagementThreadPoolSize())
+                   .commandPermits(axonServerConfiguration.getCommandFlowControl().getPermits())
+                   .queryPermits(axonServerConfiguration.getQueryFlowControl().getPermits());
+
             if (axonServerConfiguration.getToken() != null) {
                 builder.token(axonServerConfiguration.getToken());
             }
@@ -295,6 +318,13 @@ public class AxonServerConnectionManager {
             if (axonServerConfiguration.getMaxMessageSize() > 0) {
                 builder.maxInboundMessageSize(axonServerConfiguration.getMaxMessageSize());
             }
+            builder.customize(managedChannelBuilder -> managedChannelBuilder.intercept(new GrpcMessageSizeInterceptor(
+                    axonServerConfiguration.getMaxMessageSize() > 0
+                            ? axonServerConfiguration.getMaxMessageSize()
+                            : DEFAULT_MAX_MESSAGE_SIZE,
+                    axonServerConfiguration.getMaxMessageSizeWarningThreshold()
+            )));
+
             if (axonServerConfiguration.getKeepAliveTime() > 0) {
                 builder.usingKeepAlive(axonServerConfiguration.getKeepAliveTime(),
                                        axonServerConfiguration.getKeepAliveTimeout(),
@@ -312,6 +342,24 @@ public class AxonServerConnectionManager {
 
             AxonServerConnectionFactory connectionFactory = builder.build();
             return new AxonServerConnectionManager(this, connectionFactory);
+        }
+
+        private static List<NodeInfo> mapToNodeInfos(String servers) {
+            String[] serverArray = servers.split(",");
+            return Arrays.stream(serverArray)
+                         .map(server -> {
+                             String[] s = server.trim().split(":");
+                             return s.length > 1
+                                     ? NodeInfo.newBuilder()
+                                               .setHostName(s[0])
+                                               .setGrpcPort(Integer.parseInt(s[1]))
+                                               .build()
+                                     : NodeInfo.newBuilder()
+                                               .setHostName(s[0])
+                                               .setGrpcPort(DEFAULT_GRPC_PORT)
+                                               .build();
+                         })
+                         .collect(Collectors.toList());
         }
 
         /**

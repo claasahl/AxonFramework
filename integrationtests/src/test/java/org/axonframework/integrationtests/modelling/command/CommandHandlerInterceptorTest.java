@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,31 +17,36 @@
 package org.axonframework.integrationtests.modelling.command;
 
 import org.axonframework.commandhandling.CommandBus;
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.commandhandling.GenericCommandMessage;
 import org.axonframework.commandhandling.SimpleCommandBus;
 import org.axonframework.commandhandling.gateway.CommandGateway;
 import org.axonframework.commandhandling.gateway.DefaultCommandGateway;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventsourcing.EventSourcingHandler;
-import org.axonframework.eventsourcing.EventSourcingRepository;
-import org.axonframework.eventsourcing.eventstore.EmbeddedEventStore;
-import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.LegacyEventSourcingRepository;
+import org.axonframework.eventsourcing.eventstore.LegacyEmbeddedEventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.eventstore.inmemory.LegacyInMemoryEventStorageEngine;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.InterceptorChain;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.MessageTypeResolver;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.axonframework.modelling.command.AggregateAnnotationCommandHandler;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.modelling.command.AggregateMember;
 import org.axonframework.modelling.command.CommandHandlerInterceptor;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.EntityId;
-import org.axonframework.modelling.command.Repository;
+import org.axonframework.modelling.command.LegacyRepository;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
-import java.util.Objects;
-
-import static org.axonframework.commandhandling.GenericCommandMessage.asCommandMessage;
 import static org.axonframework.modelling.command.AggregateLifecycle.apply;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -53,32 +58,39 @@ import static org.mockito.Mockito.*;
  */
 class CommandHandlerInterceptorTest {
 
+    private static final MessageType TEST_COMMAND_TYPE = new MessageType("command");
+
     private CommandGateway commandGateway;
-    private EventStore eventStore;
+    private LegacyEventStore eventStore;
 
     @BeforeEach
     void setUp() {
-        eventStore = spy(EmbeddedEventStore.builder().storageEngine(new InMemoryEventStorageEngine()).build());
-        Repository<MyAggregate> myAggregateRepository = EventSourcingRepository.builder(MyAggregate.class)
-                                                                               .eventStore(eventStore)
-                                                                               .build();
-        CommandBus commandBus = SimpleCommandBus.builder().build();
-        commandGateway = DefaultCommandGateway.builder().commandBus(commandBus).build();
-        AggregateAnnotationCommandHandler<MyAggregate> myAggregateCommandHandler =
-                AggregateAnnotationCommandHandler.<MyAggregate>builder()
-                        .aggregateType(MyAggregate.class)
-                        .repository(myAggregateRepository)
-                        .build();
-
-        myAggregateCommandHandler.subscribe(commandBus);
+        eventStore = spy(LegacyEmbeddedEventStore.builder()
+                                                 .storageEngine(new LegacyInMemoryEventStorageEngine())
+                                                 .build());
+        LegacyRepository<MyAggregate> myAggregateRepository = LegacyEventSourcingRepository.builder(MyAggregate.class)
+                                                                                           .eventStore(eventStore)
+                                                                                           .build();
+        CommandBus commandBus = new SimpleCommandBus();
+        MessageTypeResolver nameResolver = new ClassBasedMessageTypeResolver();
+        commandGateway = new DefaultCommandGateway(commandBus, nameResolver);
+        commandBus.subscribe(AggregateAnnotationCommandHandler.<MyAggregate>builder()
+                                                              .aggregateType(MyAggregate.class)
+                                                              .repository(myAggregateRepository)
+                                                              .build());
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void testInterceptor() {
-        commandGateway.sendAndWait(asCommandMessage(new CreateMyAggregateCommand("id")));
-        String result = commandGateway
-                .sendAndWait(asCommandMessage(new UpdateMyAggregateStateCommand("id", "state")));
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void interceptor() {
+        CommandMessage<CreateMyAggregateCommand> createCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new CreateMyAggregateCommand("id"));
+        CommandMessage<UpdateMyAggregateStateCommand> updateCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new UpdateMyAggregateStateCommand("id", "state"));
+
+        commandGateway.sendAndWait(createCommand);
+        String result = commandGateway.sendAndWait(updateCommand, String.class);
 
         ArgumentCaptor<EventMessage<?>> eventCaptor = ArgumentCaptor.forClass(EventMessage.class);
 
@@ -94,9 +106,15 @@ class CommandHandlerInterceptorTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void testInterceptorWithChainProceeding() {
-        commandGateway.sendAndWait(asCommandMessage(new CreateMyAggregateCommand("id")));
-        commandGateway.sendAndWait(asCommandMessage(new ClearMyAggregateStateCommand("id", true)));
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void interceptorWithChainProceeding() {
+        CommandMessage<CreateMyAggregateCommand> createCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new CreateMyAggregateCommand("id"));
+        CommandMessage<ClearMyAggregateStateCommand> updateCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new ClearMyAggregateStateCommand("id", true));
+
+        commandGateway.sendAndWait(createCommand);
+        commandGateway.sendAndWait(updateCommand);
 
         ArgumentCaptor<EventMessage<?>> eventCaptor = ArgumentCaptor.forClass(EventMessage.class);
         verify(eventStore, times(3)).publish(eventCaptor.capture());
@@ -108,9 +126,15 @@ class CommandHandlerInterceptorTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void testInterceptorWithoutChainProceeding() {
-        commandGateway.sendAndWait(asCommandMessage(new CreateMyAggregateCommand("id")));
-        commandGateway.sendAndWait(asCommandMessage(new ClearMyAggregateStateCommand("id", false)));
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void interceptorWithoutChainProceeding() {
+        CommandMessage<CreateMyAggregateCommand> createCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new CreateMyAggregateCommand("id"));
+        CommandMessage<ClearMyAggregateStateCommand> updateCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new ClearMyAggregateStateCommand("id", false));
+
+        commandGateway.sendAndWait(createCommand);
+        commandGateway.sendAndWait(updateCommand);
 
         ArgumentCaptor<EventMessage<?>> eventCaptor = ArgumentCaptor.forClass(EventMessage.class);
         verify(eventStore, times(2)).publish(eventCaptor.capture());
@@ -120,9 +144,15 @@ class CommandHandlerInterceptorTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void testInterceptorWithNestedEntity() {
-        commandGateway.sendAndWait(asCommandMessage(new CreateMyAggregateCommand("id")));
-        commandGateway.sendAndWait(asCommandMessage(new MyNestedCommand("id", "state")));
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void interceptorWithNestedEntity() {
+        CommandMessage<CreateMyAggregateCommand> createCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new CreateMyAggregateCommand("id"));
+        CommandMessage<MyNestedCommand> nestedCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new MyNestedCommand("id", "state"));
+
+        commandGateway.sendAndWait(createCommand);
+        commandGateway.sendAndWait(nestedCommand);
 
         ArgumentCaptor<EventMessage<?>> eventCaptor = ArgumentCaptor.forClass(EventMessage.class);
         verify(eventStore, times(4)).publish(eventCaptor.capture());
@@ -136,9 +166,15 @@ class CommandHandlerInterceptorTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void testInterceptorWithNestedNestedEntity() {
-        commandGateway.sendAndWait(asCommandMessage(new CreateMyAggregateCommand("id")));
-        commandGateway.sendAndWait(asCommandMessage(new MyNestedNestedCommand("id", "state")));
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void interceptorWithNestedNestedEntity() {
+        CommandMessage<CreateMyAggregateCommand> createCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new CreateMyAggregateCommand("id"));
+        CommandMessage<MyNestedNestedCommand> nestedCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new MyNestedNestedCommand("id", "state"));
+
+        commandGateway.sendAndWait(createCommand);
+        commandGateway.sendAndWait(nestedCommand);
 
         ArgumentCaptor<EventMessage<?>> eventCaptor = ArgumentCaptor.forClass(EventMessage.class);
         verify(eventStore, times(6)).publish(eventCaptor.capture());
@@ -156,45 +192,39 @@ class CommandHandlerInterceptorTest {
     }
 
     @Test
-    void testInterceptorWithNonVoidReturnType() {
-        EventSourcingRepository.Builder<MyAggregateWithInterceptorReturningNonVoid> builder =
-                EventSourcingRepository.builder(MyAggregateWithInterceptorReturningNonVoid.class)
-                        .eventStore(eventStore);
+    void interceptorWithNonVoidReturnType() {
+        LegacyEventSourcingRepository.Builder<MyAggregateWithInterceptorReturningNonVoid> builder =
+                LegacyEventSourcingRepository.builder(MyAggregateWithInterceptorReturningNonVoid.class)
+                                             .eventStore(eventStore);
 
         assertThrows(AxonConfigurationException.class, builder::build);
     }
 
     @Test
-    void testInterceptorWithDeclaredChainAllowedToDeclareNonVoidReturnType() {
-        EventSourcingRepository.builder(MyAggregateWithDeclaredInterceptorChainInterceptorReturningNonVoid.class)
-                .eventStore(eventStore)
-                .build();
+    void interceptorWithDeclaredChainAllowedToDeclareNonVoidReturnType() {
+        LegacyEventSourcingRepository.builder(MyAggregateWithDeclaredInterceptorChainInterceptorReturningNonVoid.class)
+                                     .eventStore(eventStore)
+                                     .build();
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void testInterceptorThrowingAnException() {
-        commandGateway.sendAndWait(asCommandMessage(new CreateMyAggregateCommand("id")));
-        assertThrows(
-                InterceptorException.class,
-                () -> commandGateway.sendAndWait(asCommandMessage(new InterceptorThrowingCommand("id")))
-        );
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void interceptorThrowingAnException() {
+        CommandMessage<CreateMyAggregateCommand> createCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new CreateMyAggregateCommand("id"));
+        CommandMessage<InterceptorThrowingCommand> interceptorCommand =
+                new GenericCommandMessage<>(TEST_COMMAND_TYPE, new InterceptorThrowingCommand("id"));
+
+        commandGateway.sendAndWait(createCommand);
+        assertThrows(InterceptorException.class, () -> commandGateway.sendAndWait(interceptorCommand));
         ArgumentCaptor<EventMessage<?>> eventCaptor = ArgumentCaptor.forClass(EventMessage.class);
         verify(eventStore, times(1)).publish(eventCaptor.capture());
         assertEquals(new MyAggregateCreatedEvent("id"), eventCaptor.getAllValues().get(0).getPayload());
     }
 
-    private static class CreateMyAggregateCommand {
+    private record CreateMyAggregateCommand(String id) {
 
-        private final String id;
-
-        private CreateMyAggregateCommand(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
     }
 
     private static class UpdateMyAggregateStateCommand {
@@ -221,24 +251,8 @@ class CommandHandlerInterceptorTest {
         }
     }
 
-    private static class ClearMyAggregateStateCommand {
+    private record ClearMyAggregateStateCommand(@TargetAggregateIdentifier String id, boolean proceed) {
 
-        @TargetAggregateIdentifier
-        private final String id;
-        private final boolean proceed;
-
-        private ClearMyAggregateStateCommand(String id, boolean proceed) {
-            this.id = id;
-            this.proceed = proceed;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        public boolean isProceed() {
-            return proceed;
-        }
     }
 
     private static class MyNestedCommand {
@@ -289,310 +303,44 @@ class CommandHandlerInterceptorTest {
         }
     }
 
-    public static class InterceptorThrowingCommand {
+    public record InterceptorThrowingCommand(@TargetAggregateIdentifier String id) {
 
-        @TargetAggregateIdentifier
-        private final String id;
-
-        public InterceptorThrowingCommand(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
     }
 
-    private static class MyAggregateCreatedEvent {
+    private record MyAggregateCreatedEvent(String id) {
 
-        private final String id;
-
-        private MyAggregateCreatedEvent(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            MyAggregateCreatedEvent that = (MyAggregateCreatedEvent) o;
-            return Objects.equals(id, that.id);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id);
-        }
     }
 
-    private static class MyAggregateStateUpdatedEvent {
+    private record MyAggregateStateUpdatedEvent(@TargetAggregateIdentifier String id, String state) {
 
-        @TargetAggregateIdentifier
-        private final String id;
-        private final String state;
-
-        private MyAggregateStateUpdatedEvent(String id, String state) {
-            this.id = id;
-            this.state = state;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        public String getState() {
-            return state;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            MyAggregateStateUpdatedEvent that = (MyAggregateStateUpdatedEvent) o;
-            return Objects.equals(id, that.id) &&
-                    Objects.equals(state, that.state);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, state);
-        }
     }
 
-    private static class MyAggregateStateClearedEvent {
+    private record MyAggregateStateClearedEvent(String id) {
 
-        private final String id;
-
-        private MyAggregateStateClearedEvent(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            MyAggregateStateClearedEvent that = (MyAggregateStateClearedEvent) o;
-            return Objects.equals(id, that.id);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id);
-        }
     }
 
-    private static class MyAggregateStateNotClearedEvent {
+    private record MyAggregateStateNotClearedEvent(String id) {
 
-        private final String id;
-
-        private MyAggregateStateNotClearedEvent(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            MyAggregateStateNotClearedEvent that = (MyAggregateStateNotClearedEvent) o;
-            return Objects.equals(id, that.id);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id);
-        }
     }
 
-    private static class MyNestedEvent {
+    private record MyNestedEvent(String id, String state) {
 
-        private final String id;
-        private final String state;
-
-        private MyNestedEvent(String id, String state) {
-            this.id = id;
-            this.state = state;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        public String getState() {
-            return state;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            MyNestedEvent that = (MyNestedEvent) o;
-            return Objects.equals(id, that.id) &&
-                    Objects.equals(state, that.state);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, state);
-        }
     }
 
-    private static class MyNestedNestedEvent {
+    private record MyNestedNestedEvent(String id, String state) {
 
-        private final String id;
-        private final String state;
-
-        private MyNestedNestedEvent(String id, String state) {
-            this.id = id;
-            this.state = state;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        public String getState() {
-            return state;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            MyNestedNestedEvent that = (MyNestedNestedEvent) o;
-            return Objects.equals(id, that.id) &&
-                    Objects.equals(state, that.state);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, state);
-        }
     }
 
-    private static class InterceptorThrewEvent {
+    private record InterceptorThrewEvent(String id) {
 
-        private final String id;
-
-        private InterceptorThrewEvent(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            InterceptorThrewEvent that = (InterceptorThrewEvent) o;
-            return Objects.equals(id, that.id);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id);
-        }
     }
 
-    private static class AnyCommandInterceptedEvent {
+    private record AnyCommandInterceptedEvent(String id) {
 
-        private final String id;
-
-        private AnyCommandInterceptedEvent(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            AnyCommandInterceptedEvent that = (AnyCommandInterceptedEvent) o;
-            return Objects.equals(id, that.id);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id);
-        }
     }
 
-    private static class AnyCommandMatchingPatternInterceptedEvent {
+    private record AnyCommandMatchingPatternInterceptedEvent(String id) {
 
-        private final String id;
-
-        private AnyCommandMatchingPatternInterceptedEvent(String id) {
-            this.id = id;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            AnyCommandMatchingPatternInterceptedEvent that = (AnyCommandMatchingPatternInterceptedEvent) o;
-            return Objects.equals(id, that.id);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id);
-        }
     }
 
     @SuppressWarnings("unused")
@@ -609,8 +357,9 @@ class CommandHandlerInterceptorTest {
         }
 
         @CommandHandler
-        public MyAggregate(CreateMyAggregateCommand command) {
-            apply(new MyAggregateCreatedEvent(command.getId()));
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateMyAggregateCommand command) {
+            apply(new MyAggregateCreatedEvent(command.id()));
         }
 
         @CommandHandlerInterceptor
@@ -619,14 +368,14 @@ class CommandHandlerInterceptorTest {
         }
 
         @CommandHandlerInterceptor(commandNamePattern = ".*Nested.*")
-        public void interceptAllMatchingPattern(Object command, InterceptorChain interceptorChain) throws Exception {
+        public void interceptAllMatchingPattern(Object command, InterceptorChain interceptorChain, ProcessingContext context) throws Exception {
             apply(new AnyCommandMatchingPatternInterceptedEvent(command.getClass().getName()));
-            interceptorChain.proceed();
+            interceptorChain.proceedSync(context);
         }
 
         @EventSourcingHandler
         public void on(MyAggregateCreatedEvent event) {
-            this.id = event.getId();
+            this.id = event.id();
             myNestedEntity = new MyNestedEntity(id);
         }
 
@@ -643,22 +392,22 @@ class CommandHandlerInterceptorTest {
 
         @EventSourcingHandler
         public void on(MyAggregateStateUpdatedEvent event) {
-            this.state = event.getState();
+            this.state = event.state();
         }
 
         @CommandHandlerInterceptor
-        public void intercept(ClearMyAggregateStateCommand command, InterceptorChain interceptorChain)
+        public void intercept(ClearMyAggregateStateCommand command, InterceptorChain interceptorChain, ProcessingContext context)
                 throws Exception {
-            if (command.isProceed()) {
-                interceptorChain.proceed();
+            if (command.proceed()) {
+                interceptorChain.proceedSync(context);
             } else {
-                apply(new MyAggregateStateNotClearedEvent(command.getId()));
+                apply(new MyAggregateStateNotClearedEvent(command.id()));
             }
         }
 
         @CommandHandler
         public void handle(ClearMyAggregateStateCommand command) {
-            apply(new MyAggregateStateClearedEvent(command.getId()));
+            apply(new MyAggregateStateClearedEvent(command.id()));
         }
 
         @EventSourcingHandler
@@ -683,7 +432,7 @@ class CommandHandlerInterceptorTest {
 
         @CommandHandler
         public void handle(InterceptorThrowingCommand command) {
-            apply(new InterceptorThrewEvent(command.getId()));
+            apply(new InterceptorThrewEvent(command.id()));
         }
 
         @EventSourcingHandler
@@ -718,7 +467,7 @@ class CommandHandlerInterceptorTest {
 
         @EventSourcingHandler
         public void on(MyNestedEvent event) {
-            this.state = event.getState();
+            this.state = event.state();
         }
     }
 
@@ -730,9 +479,9 @@ class CommandHandlerInterceptorTest {
         private String state;
 
         @CommandHandlerInterceptor
-        public static void interceptAll(Object command, InterceptorChain chain) throws Exception {
+        public static void interceptAll(Object command, InterceptorChain chain, ProcessingContext context) throws Exception {
             apply(new AnyCommandInterceptedEvent("StaticNestedNested" + command.getClass().getName()));
-            chain.proceed();
+            chain.proceedSync(context);
         }
 
         private MyNestedNestedEntity(String id) {

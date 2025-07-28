@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,8 +25,6 @@ import org.axonframework.common.AxonConfigurationException;
  * @since 4.3
  */
 public class AggregateModellingException extends AxonConfigurationException {
-
-    private static final long serialVersionUID = 4058550238776573504L;
 
     /**
      * Constructs this exception with given {@code message} explaining the cause.

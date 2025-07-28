@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,23 +18,25 @@ package org.axonframework.messaging.correlation;
 
 import org.axonframework.messaging.GenericMessage;
 import org.axonframework.messaging.Message;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.MessageType;
+import org.junit.jupiter.api.*;
 
 import java.util.HashMap;
 import java.util.Map;
 
 import static java.util.Collections.singletonMap;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 class SimpleCorrelationDataProviderTest {
 
     @Test
-    void testResolveCorrelationData() {
-        Map<String, Object> metaData = new HashMap<>();
+    void resolveCorrelationData() {
+        Map<String, String> metaData = new HashMap<>();
         metaData.put("key1", "value1");
         metaData.put("key2", "value2");
         metaData.put("key3", "value3");
-        Message message = new GenericMessage<>("payload", metaData);
+        Message<String> message =
+                new GenericMessage<>(new MessageType("message"), "payload", metaData);
 
         assertEquals(singletonMap("key1", "value1"),
                      new SimpleCorrelationDataProvider("key1").correlationDataFor(message));

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.axonframework.modelling.command;
 
+import org.axonframework.messaging.annotation.HasHandlerAttributes;
+
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -25,9 +27,9 @@ import java.lang.annotation.Target;
 /**
  * Annotation used to specify the creation policy for a command handler. Default behavior is that command handlers
  * defined on a constructor would create a new instance of the aggregate, and command handlers defined on other methods
- * expect an existing aggregate. This annotation provides the option to define policy
- * {@code AggregateCreationPolicy.CREATE_IF_MISSING} or {@code AggregateCreationPolicy.ALWAYS} on a command handler to
- * create a new instance of the aggregate from a handler operation.
+ * expect an existing aggregate. This annotation provides the option to define policy {@code
+ * AggregateCreationPolicy.CREATE_IF_MISSING} or {@code AggregateCreationPolicy.ALWAYS} on a command handler to create a
+ * new instance of the aggregate from a handler operation.
  *
  * @author Marc Gathier
  * @since 4.3
@@ -35,6 +37,7 @@ import java.lang.annotation.Target;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+@HasHandlerAttributes
 public @interface CreationPolicy {
 
     /**

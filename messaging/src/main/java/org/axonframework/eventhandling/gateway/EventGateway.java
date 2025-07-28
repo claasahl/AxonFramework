@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,43 +16,55 @@
 
 package org.axonframework.eventhandling.gateway;
 
-import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.messaging.MessageDispatchInterceptorSupport;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Interface towards the Event Handling components of an application. This interface provides a friendlier API toward
- * the event bus. The EventGateway allows for components to easily publish events.
+ * Interface towards the Event Handling components of an application.
+ * <p>
+ * This interface provides a friendlier API toward the {@link org.axonframework.eventhandling.EventSink} and allows for
+ * components to easily publish events.
  *
  * @author Bert Laverman
  * @see DefaultEventGateway
- * @since 4.1
+ * @since 4.1.0
  */
-public interface EventGateway extends MessageDispatchInterceptorSupport<EventMessage<?>> {
+public interface EventGateway {
 
     /**
-     * Publish a collection of events on this bus (one, or multiple). The events will be dispatched to all subscribed
-     * listeners.
+     * Publishes the given {@code events} within the given {@code context}. When present, the {@code events} should be
+     * published as part of the {@code context's} lifecycle.
      * <p>
-     * Implementations may treat the given {@code events} as a single batch and distribute the events as such to
-     * all subscribed EventListeners.
+     * The {@code events} are mapped to {@link org.axonframework.eventhandling.EventMessage EventMessages} before they
+     * are given to an {@link org.axonframework.eventhandling.EventSink}.
      *
-     * @param events The collection of events to publish
+     * @param context The processing context, if any, to publish the given {@code events} in.
+     * @param events  The collection of events to publish.
+     * @return A {@link CompletableFuture} of {@link Void}. Completion of the future depends on the
+     * {@link org.axonframework.eventhandling.EventSink} used by this gateway.
      */
-    default void publish(Object... events) {
-        publish(Arrays.asList(events));
+    default CompletableFuture<Void> publish(@Nullable ProcessingContext context,
+                                            Object... events) {
+        return publish(context, Arrays.asList(events));
     }
 
     /**
-     * Publish a collection of events on this bus (one, or multiple). The events will be dispatched to all subscribed
-     * listeners.
+     * Publishes the given {@code events} within the given {@code context}. When present, the {@code events} should be
+     * published as part of the {@code context's} lifecycle.
      * <p>
-     * Implementations may treat the given {@code events} as a single batch and distribute the events as such to
-     * all subscribed EventListeners.
+     * The {@code events} are mapped to {@link org.axonframework.eventhandling.EventMessage EventMessages} before they
+     * are given to an {@link org.axonframework.eventhandling.EventSink}.
      *
-     * @param events The collection of events to publish
+     * @param context The processing context, if any, to publish the given {@code events} in.
+     * @param events  The collection of events to publish.
+     * @return A {@link CompletableFuture} of {@link Void}. Completion of the future depends on the
+     * {@link org.axonframework.eventhandling.EventSink} used by this gateway.
      */
-    void publish(List<?> events);
+    CompletableFuture<Void> publish(@Nullable ProcessingContext context,
+                                    @Nonnull List<?> events);
 }

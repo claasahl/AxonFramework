@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,15 @@ import org.axonframework.common.Registration;
 import org.axonframework.eventhandling.AbstractEventBus;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.eventhandling.EventUtils;
+import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventhandling.TrackingEventStream;
 import org.axonframework.eventhandling.TrackingToken;
-import org.axonframework.eventsourcing.EventSourcingRepository;
+import org.axonframework.eventsourcing.LegacyEventSourcingRepository;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
-import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
 import org.axonframework.integrationtests.utils.StubAggregate;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
@@ -37,31 +37,32 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import jakarta.annotation.Nonnull;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class CommandHandlingTest {
 
-    private EventSourcingRepository<StubAggregate> repository;
+    private LegacyEventSourcingRepository<StubAggregate> repository;
     private String aggregateIdentifier;
     private StubEventStore stubEventStore;
 
     @BeforeEach
     void setUp() {
         stubEventStore = StubEventStore.builder().build();
-        repository = EventSourcingRepository.builder(StubAggregate.class)
-                .eventStore(stubEventStore)
-                .build();
+        repository = LegacyEventSourcingRepository.builder(StubAggregate.class)
+                                                  .eventStore(stubEventStore)
+                                                  .build();
         aggregateIdentifier = "testAggregateIdentifier";
     }
 
     @Test
-    void testCommandHandlerLoadsSameAggregateTwice() throws Exception {
-        DefaultUnitOfWork.startAndGet(null);
+    void commandHandlerLoadsSameAggregateTwice() throws Exception {
+        LegacyDefaultUnitOfWork.startAndGet(null);
         repository.newInstance(() -> new StubAggregate(aggregateIdentifier)).execute(StubAggregate::doSomething);
         CurrentUnitOfWork.commit();
 
-        DefaultUnitOfWork.startAndGet(null);
+        LegacyDefaultUnitOfWork.startAndGet(null);
         repository.load(aggregateIdentifier).execute(StubAggregate::doSomething);
         repository.load(aggregateIdentifier).execute(StubAggregate::doSomething);
         CurrentUnitOfWork.commit();
@@ -76,9 +77,9 @@ class CommandHandlingTest {
         assertFalse(es.hasNext());
     }
 
-    private static class StubEventStore extends AbstractEventBus implements EventStore {
+    private static class StubEventStore extends AbstractEventBus implements LegacyEventStore {
 
-        private List<DomainEventMessage<?>> storedEvents = new LinkedList<>();
+        private final List<DomainEventMessage<?>> storedEvents = new LinkedList<>();
 
         private StubEventStore(Builder builder) {
             super(builder);
@@ -89,17 +90,23 @@ class CommandHandlingTest {
         }
 
         @Override
-        public DomainEventStream readEvents(String identifier) {
+        public DomainEventStream readEvents(@Nonnull String identifier) {
             return DomainEventStream.of(new ArrayList<>(storedEvents));
         }
 
         @Override
         protected void commit(List<? extends EventMessage<?>> events) {
-            storedEvents.addAll(events.stream().map(EventUtils::asDomainEventMessage).collect(Collectors.toList()));
+            storedEvents.addAll(events.stream().map(StubEventStore::asDomainEventMessage).collect(Collectors.toList()));
+        }
+
+        private static <T> DomainEventMessage<T> asDomainEventMessage(EventMessage<T> event) {
+            return event instanceof DomainEventMessage<?>
+                    ? (DomainEventMessage<T>) event
+                    : new GenericDomainEventMessage<>(null, event.getIdentifier(), 0L, event, event::getTimestamp);
         }
 
         @Override
-        public void storeSnapshot(DomainEventMessage<?> snapshot) {
+        public void storeSnapshot(@Nonnull DomainEventMessage<?> snapshot) {
         }
 
         @Override
@@ -108,7 +115,7 @@ class CommandHandlingTest {
         }
 
         @Override
-        public Registration subscribe(Consumer<List<? extends EventMessage<?>>> eventProcessor) {
+        public Registration subscribe(@Nonnull Consumer<List<? extends EventMessage<?>>> eventProcessor) {
             throw new UnsupportedOperationException();
         }
 

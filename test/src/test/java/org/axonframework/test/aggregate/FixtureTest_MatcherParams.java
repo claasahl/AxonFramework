@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2016. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,23 +17,23 @@
 package org.axonframework.test.aggregate;
 
 import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.commandhandling.CommandResultMessage;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.messaging.MessageHandler;
 import org.axonframework.test.AxonAssertionError;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import org.junit.jupiter.api.*;
+import org.mockito.*;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import static org.axonframework.test.matchers.Matchers.matches;
 import static org.axonframework.test.matchers.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 /**
  * @author Allard Buijze
@@ -50,7 +50,8 @@ class FixtureTest_MatcherParams {
     }
 
     @Test
-    void testFirstFixture() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void firstFixture() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()))
                 .given(new MyEvent("aggregateId", 1))
                 .when(new TestCommand("aggregateId"))
@@ -59,7 +60,8 @@ class FixtureTest_MatcherParams {
     }
 
     @Test
-    void testPayloadsMatch() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void payloadsMatch() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()))
                 .given(new MyEvent("aggregateId", 1))
                 .when(new TestCommand("aggregateId"))
@@ -68,7 +70,8 @@ class FixtureTest_MatcherParams {
     }
 
     @Test
-    void testPayloadsMatchExact() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void payloadsMatchExact() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()))
                 .given(new MyEvent("aggregateId", 1))
                 .when(new TestCommand("aggregateId"))
@@ -77,7 +80,8 @@ class FixtureTest_MatcherParams {
     }
 
     @Test
-    void testPayloadsMatchPredicate() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void payloadsMatchPredicate() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()))
                 .given(new MyEvent("aggregateId", 1))
                 .when(new TestCommand("aggregateId"))
@@ -86,7 +90,8 @@ class FixtureTest_MatcherParams {
     }
 
     @Test
-    void testFixture_UnexpectedException() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_UnexpectedException() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -100,11 +105,15 @@ class FixtureTest_MatcherParams {
                         .when(new StrangeCommand("aggregateId"))
                         .expectResultMessageMatching(new DoesMatch<>())
         );
-        assertTrue(e.getMessage().contains("but got <exception of type [StrangeCommandReceivedException]>"));
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("but got <exception of type [StrangeCommandReceivedException]>"), resultMessage
+        );
     }
 
     @Test
-    void testFixture_UnexpectedReturnValue() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixture_UnexpectedReturnValue() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -116,13 +125,17 @@ class FixtureTest_MatcherParams {
                         .when(new TestCommand("aggregateId"))
                         .expectException(new DoesMatch<>())
         );
-        assertTrue(e.getMessage().contains("The command handler returned normally, but an exception was expected"));
-        assertTrue(e.getMessage().contains(
-                "<anything> but returned with <null>"));
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("The command handler returned normally, but an exception was expected"),
+                resultMessage
+        );
+        assertTrue(resultMessage.contains("<anything>,\n but got <null>"), resultMessage);
     }
 
     @Test
-    void testFixture_WrongReturnValue() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_WrongReturnValue() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -134,11 +147,17 @@ class FixtureTest_MatcherParams {
                         .when(new TestCommand("aggregateId"))
                         .expectResultMessageMatching(new DoesNotMatch<>())
         );
-        assertTrue(e.getMessage().contains("<something you can never give me> but got <GenericCommandResultMessage{payload={null}"));
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("<something you can never give me>,\n"
+                                               + " but got <GenericCommandResultMessage{payload={null}"),
+                resultMessage
+        );
     }
 
     @Test
-    void testFixture_WrongExceptionType() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_WrongExceptionType() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -150,12 +169,16 @@ class FixtureTest_MatcherParams {
                         .when(new StrangeCommand("aggregateId"))
                         .expectException(new DoesNotMatch<>())
         );
-        assertTrue(e.getMessage().contains(
-                "<something you can never give me> but got <exception of type [StrangeCommandReceivedException]>"));
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("<something you can never give me>,\n"
+                                               + " but got <exception of type [StrangeCommandReceivedException]>"),
+                resultMessage
+        );
     }
 
     @Test
-    void testFixture_ExpectedPublishedSameAsStored() {
+    void fixture_ExpectedPublishedSameAsStored() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -176,18 +199,19 @@ class FixtureTest_MatcherParams {
 
     @Test
     @SuppressWarnings("unchecked")
-    void testFixture_DispatchMetaDataInCommand() throws Exception {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixture_DispatchMetaDataInCommand() throws Exception {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
-        MessageHandler<CommandMessage<?>> mockCommandHandler = mock(MessageHandler.class);
+        MessageHandler<CommandMessage<?>, CommandResultMessage<?>> mockCommandHandler = mock(MessageHandler.class);
         fixture.registerCommandHandler(StrangeCommand.class, mockCommandHandler);
         fixture
                 .given(givenEvents)
                 .when(new StrangeCommand("aggregateId"), Collections.singletonMap("meta", "value"));
 
         final ArgumentCaptor<CommandMessage> captor = ArgumentCaptor.forClass(CommandMessage.class);
-        verify(mockCommandHandler).handle(captor.capture());
+        verify(mockCommandHandler).handleSync(captor.capture(), any());
         List<CommandMessage> dispatched = captor.getAllValues();
         assertEquals(1, dispatched.size());
         assertEquals(1, dispatched.get(0).getMetaData().size());
@@ -195,7 +219,7 @@ class FixtureTest_MatcherParams {
     }
 
     @Test
-    void testFixture_EventDoesNotMatch() {
+    void fixture_EventDoesNotMatch() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));

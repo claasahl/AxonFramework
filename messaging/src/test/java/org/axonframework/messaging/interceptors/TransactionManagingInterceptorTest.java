@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,25 +21,29 @@ import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.messaging.GenericMessage;
 import org.axonframework.messaging.InterceptorChain;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.junit.jupiter.api.*;
 
 import static org.mockito.Mockito.*;
 
 /**
+ * Test class validating the {@link TransactionManagingInterceptor}.
+ *
  * @author Rene de Waele
  */
 class TransactionManagingInterceptorTest {
 
-    private Message<?> message;
     private InterceptorChain interceptorChain;
-    private UnitOfWork<Message<?>> unitOfWork;
+    private LegacyUnitOfWork<Message<?>> unitOfWork;
     private TransactionManager transactionManager;
     private Transaction transaction;
     private TransactionManagingInterceptor<Message<?>> subject;
+    private ProcessingContext context;
 
     @BeforeEach
     void setUp() {
@@ -47,8 +51,9 @@ class TransactionManagingInterceptorTest {
             CurrentUnitOfWork.get().rollback();
         }
         interceptorChain = mock(InterceptorChain.class);
-        message = new GenericMessage<>(new Object());
-        unitOfWork = DefaultUnitOfWork.startAndGet(message);
+        Message<?> message = new GenericMessage<>(new MessageType("message"), new Object());
+        context = StubProcessingContext.forMessage(message);
+        unitOfWork = LegacyDefaultUnitOfWork.startAndGet(message);
         transactionManager = mock(TransactionManager.class);
         transaction = mock(Transaction.class);
         when(transactionManager.startTransaction()).thenReturn(transaction);
@@ -56,20 +61,20 @@ class TransactionManagingInterceptorTest {
     }
 
     @Test
-    void testStartTransaction() throws Exception {
-        UnitOfWork<Message<?>> unitOfWork = spy(this.unitOfWork);
+    void startTransaction() throws Exception {
+        LegacyUnitOfWork<Message<?>> unitOfWork = spy(this.unitOfWork);
 
-        subject.handle(unitOfWork, interceptorChain);
+        subject.handle(unitOfWork, context, interceptorChain);
         verify(transactionManager).startTransaction();
-        verify(interceptorChain).proceed();
+        verify(interceptorChain).proceedSync(context);
 
         verify(unitOfWork).onCommit(any());
         verify(unitOfWork).onRollback(any());
     }
 
     @Test
-    void testUnitOfWorkCommit() throws Exception {
-        subject.handle(unitOfWork, interceptorChain);
+    void unitOfWorkCommit() throws Exception {
+        subject.handle(unitOfWork, context, interceptorChain);
         unitOfWork.commit();
 
         verify(transaction).commit();

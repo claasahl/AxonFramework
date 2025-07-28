@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,9 +97,7 @@ public final class ClasspathHandlerEnhancerDefinition {
                 HandlerEnhancerDefinition factory = iterator.next();
                 enhancers.add(factory);
             } catch (ServiceConfigurationError e) {
-                LOGGER.info(
-                        "HandlerEnhancerDefinition instance ignored, as one of the required classes is not available" +
-                                "on the classpath: {}", e.getMessage());
+                LOGGER.info("HandlerEnhancerDefinition instance ignored, as one of the required classes is not availableon the classpath: {}", e.getMessage());
             } catch (NoClassDefFoundError e) {
                 LOGGER.info("HandlerEnhancerDefinition instance ignored. It relies on a class that cannot be found: {}",
                             e.getMessage());

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,16 @@
 
 package org.axonframework.test.aggregate;
 
-import org.axonframework.modelling.command.Aggregate;
-import org.axonframework.modelling.command.AggregateLifecycle;
-import org.axonframework.modelling.command.ApplyMore;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.GenericMessage;
+import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.modelling.command.AggregateLifecycle;
+import org.axonframework.modelling.command.ApplyMore;
 
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -31,20 +34,17 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * Stub implementation of an AggregateLifecycle that registers all applied events for verification later. This
- * lifecycle instance can be activated (see {@link #activate()}) and deactivated (see {@link #close()}) at will. Events
- * applied while it is active are stored and can be retrieved using {@link #getAppliedEvents()} or
+ * Stub implementation of an AggregateLifecycle that registers all applied events for verification later. This lifecycle
+ * instance can be activated (see {@link #activate()}) and deactivated (see {@link #close()}) at will. Events applied
+ * while it is active are stored and can be retrieved using {@link #getAppliedEvents()} or
  * {@link #getAppliedEventPayloads()}.
- * <p>
- * When using with JUnit, consider using the {@link StubAggregateLifecycleRule} with {@link org.junit.Rule &#064;Rule}
- * instead, as it is easier and safer to use.
  */
 public class StubAggregateLifecycle extends AggregateLifecycle {
 
     private static final String AGGREGATE_TYPE = "stubAggregate";
 
     private Runnable registration;
-    private List<EventMessage<?>> appliedMessages = new CopyOnWriteArrayList<>();
+    private final List<EventMessage<?>> appliedMessages = new CopyOnWriteArrayList<>();
     private boolean deleted;
 
     /**
@@ -53,7 +53,7 @@ public class StubAggregateLifecycle extends AggregateLifecycle {
      */
     public void activate() {
         super.startScope();
-        this.registration = () -> super.endScope();
+        this.registration = super::endScope;
     }
 
     /**
@@ -97,14 +97,28 @@ public class StubAggregateLifecycle extends AggregateLifecycle {
         this.deleted = true;
     }
 
+    @SuppressWarnings("unchecked")
+    private static <P> EventMessage<P> asEventMessage(Object event) {
+        if (event instanceof EventMessage) {
+            return (EventMessage<P>) event;
+        } else if (event instanceof Message) {
+            Message<P> message = (Message<P>) event;
+            return new GenericEventMessage<>(message, () -> GenericEventMessage.clock.instant());
+        }
+        return new GenericEventMessage<>(
+                new GenericMessage<>(new MessageType(event.getClass()), (P) event),
+                () -> GenericEventMessage.clock.instant()
+        );
+    }
+
     @Override
     protected <T> ApplyMore doApply(T payload, MetaData metaData) {
-        appliedMessages.add(new GenericEventMessage<>(payload, metaData));
+        appliedMessages.add(new GenericEventMessage<>(new MessageType(payload.getClass()), payload, metaData));
 
         return new ApplyMore() {
             @Override
             public ApplyMore andThenApply(Supplier<?> payloadOrMessageSupplier) {
-                appliedMessages.add(GenericEventMessage.asEventMessage(payloadOrMessageSupplier.get()));
+                appliedMessages.add(asEventMessage(payloadOrMessageSupplier.get()));
                 return this;
             }
 

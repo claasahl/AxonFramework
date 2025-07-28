@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,15 @@
  * limitations under the License.
  */
 
-/*
- * Copyright (c) 2010-2017. Axon Framework
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.axonframework.springboot;
 
+import com.thoughtworks.xstream.XStream;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.json.JacksonSerializer;
 import org.axonframework.serialization.xml.XStreamSerializer;
+import org.axonframework.springboot.autoconfig.AxonServerActuatorAutoConfiguration;
+import org.axonframework.springboot.autoconfig.AxonServerAutoConfiguration;
+import org.axonframework.springboot.autoconfig.AxonServerBusAutoConfiguration;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,11 +41,19 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import static org.junit.jupiter.api.Assertions.*;
 
 @ContextConfiguration
-@EnableAutoConfiguration(exclude = {JmxAutoConfiguration.class, WebClientAutoConfiguration.class,
-        HibernateJpaAutoConfiguration.class, DataSourceAutoConfiguration.class})
+@EnableAutoConfiguration(exclude = {
+        AxonServerAutoConfiguration.class,
+        AxonServerBusAutoConfiguration.class,
+        AxonServerActuatorAutoConfiguration.class,
+        DataSourceAutoConfiguration.class,
+        HibernateJpaAutoConfiguration.class,
+        JmxAutoConfiguration.class,
+        WebClientAutoConfiguration.class
+})
 @ExtendWith(SpringExtension.class)
 @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
-public class AxonAutoConfigurationWithOnlyEventSerializerTest {
+@Disabled("TODO #3496")
+class AxonAutoConfigurationWithOnlyEventSerializerTest {
 
     @Autowired
     private Serializer serializer;
@@ -71,7 +67,7 @@ public class AxonAutoConfigurationWithOnlyEventSerializerTest {
     private Serializer messageSerializer;
 
     @Test
-    void testRevertsToDefaultSerializer() {
+    void revertsToDefaultSerializer() {
         assertNotNull(serializer);
         assertNotNull(eventSerializer);
         assertNotNull(messageSerializer);
@@ -94,8 +90,10 @@ public class AxonAutoConfigurationWithOnlyEventSerializerTest {
 
         @Bean
         @Qualifier("messageSerializer")
-        public Serializer myMessageSerializer() {
-            return XStreamSerializer.builder().build();
+        public Serializer myMessageSerializer(XStream xStream) {
+            return XStreamSerializer.builder()
+                                    .xStream(xStream)
+                                    .build();
         }
     }
 }

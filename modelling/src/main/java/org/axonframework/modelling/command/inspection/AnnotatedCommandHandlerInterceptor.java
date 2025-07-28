@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,15 @@ package org.axonframework.modelling.command.inspection;
 
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.messaging.InterceptorChain;
+import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageHandlerInterceptor;
+import org.axonframework.messaging.MessageStream;
 import org.axonframework.messaging.annotation.InterceptorChainParameterResolverFactory;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+
+import jakarta.annotation.Nonnull;
 
 /**
  * Annotated command handler interceptor on aggregate. Will invoke the delegate to the real interceptor method.
@@ -48,12 +53,26 @@ public class AnnotatedCommandHandlerInterceptor<T> implements MessageHandlerInte
     }
 
     @Override
-    public Object handle(UnitOfWork<? extends CommandMessage<?>> unitOfWork, InterceptorChain interceptorChain)
-            throws Exception {
-        return InterceptorChainParameterResolverFactory.callWithInterceptorChain(
+    public Object handle(@Nonnull LegacyUnitOfWork<? extends CommandMessage<?>> unitOfWork,
+                         @Nonnull ProcessingContext context,
+                         @Nonnull InterceptorChain interceptorChain) throws Exception {
+        return InterceptorChainParameterResolverFactory.callWithInterceptorChainSync(
                 interceptorChain,
-                () -> delegate.canHandle(unitOfWork.getMessage())
-                      ? delegate.handle(unitOfWork.getMessage(), target)
-                      : interceptorChain.proceed());
+                () -> delegate.canHandle(unitOfWork.getMessage(), context)
+                        ? delegate.handleSync(unitOfWork.getMessage(), context, target)
+                        : interceptorChain.proceedSync(context));
+    }
+
+    @Override
+    public <M extends CommandMessage<?>, R extends Message<?>> MessageStream<R> interceptOnHandle(
+            @Nonnull M message,
+            @Nonnull ProcessingContext context,
+            @Nonnull InterceptorChain<M, R> interceptorChain
+    ) {
+        return InterceptorChainParameterResolverFactory.callWithInterceptorChain(
+                context,
+                interceptorChain,
+                ct -> interceptorChain.proceed(message, ct)
+        );
     }
 }

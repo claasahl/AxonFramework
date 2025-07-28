@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,15 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import jakarta.persistence.Id;
+import jakarta.persistence.IdClass;
+import jakarta.persistence.MappedSuperclass;
 import org.axonframework.eventhandling.AbstractEventEntry;
 import org.axonframework.eventhandling.DomainEventData;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.serialization.Serializer;
 
-import java.io.Serializable;
 import java.util.Objects;
-import javax.persistence.Id;
-import javax.persistence.IdClass;
-import javax.persistence.MappedSuperclass;
 
 /**
  * Abstract base class of a serialized snapshot event storing the state of an aggregate. If JPA is used these entries
@@ -109,9 +108,7 @@ public abstract class AbstractSnapshotEventEntry<T> extends AbstractEventEntry<T
      * Primary key definition of the AbstractEventEntry class. Is used by JPA to support composite primary keys.
      */
     @SuppressWarnings("UnusedDeclaration")
-    public static class PK implements Serializable {
-
-        private static final long serialVersionUID = 9182347799552520594L;
+    public static class PK {
 
         private String aggregateIdentifier;
         private long sequenceNumber;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,12 @@
 
 package org.axonframework.messaging.annotation;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
-import java.lang.annotation.Annotation;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -27,6 +29,8 @@ import java.util.Optional;
  * this class to provide additional functionality to the delegate member.
  *
  * @param <T> the entity type
+ * @author Allard Buijze
+ * @since 3.0
  */
 public abstract class WrappedMessageHandlingMember<T> implements MessageHandlingMember<T> {
 
@@ -52,23 +56,30 @@ public abstract class WrappedMessageHandlingMember<T> implements MessageHandling
     }
 
     @Override
-    public boolean canHandle(Message<?> message) {
-        return delegate.canHandle(message);
+    public boolean canHandle(@Nonnull Message<?> message, @Nonnull ProcessingContext context) {
+        return delegate.canHandle(message, context);
     }
 
     @Override
-    public Object handle(Message<?> message, T target) throws Exception {
-        return delegate.handle(message, target);
+    public Object handleSync(@Nonnull Message<?> message, @Nonnull ProcessingContext context,  T target) throws Exception {
+        return delegate.handleSync(message, context, target);
     }
 
     @Override
-    public boolean canHandleType(Class<?> payloadType) {
+    public MessageStream<?> handle(@Nonnull Message<?> message,
+                                   @Nonnull ProcessingContext context,
+                                   @Nullable T target) {
+        return delegate.handle(message, context, target);
+    }
+
+    @Override
+    public boolean canHandleType(@Nonnull Class<?> payloadType) {
         return delegate.canHandleType(payloadType);
     }
 
     @Override
     @SuppressWarnings("rawtypes")
-    public boolean canHandleMessageType(Class<? extends Message> messageType) {
+    public boolean canHandleMessageType(@Nonnull Class<? extends Message> messageType) {
         return delegate.canHandleMessageType(messageType);
     }
 
@@ -84,12 +95,7 @@ public abstract class WrappedMessageHandlingMember<T> implements MessageHandling
     }
 
     @Override
-    public Optional<Map<String, Object>> annotationAttributes(Class<? extends Annotation> annotationType) {
-        return delegate.annotationAttributes(annotationType);
-    }
-
-    @Override
-    public boolean hasAnnotation(Class<? extends Annotation> annotationType) {
-        return delegate.hasAnnotation(annotationType);
+    public <R> Optional<R> attribute(String attributeKey) {
+        return delegate.attribute(attributeKey);
     }
 }

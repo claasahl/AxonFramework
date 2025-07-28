@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,22 @@
 
 package org.axonframework.test.aggregate;
 
-import org.axonframework.commandhandling.CommandHandler;
-import org.axonframework.modelling.command.Aggregate;
-import org.axonframework.modelling.command.Repository;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.eventhandling.EventBus;
 import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.modelling.command.LegacyRepository;
 
 /**
  * @author Allard Buijze
  */
 class MyCommandHandler {
 
-    private Repository<StandardAggregate> repository;
+    private LegacyRepository<StandardAggregate> repository;
     private EventBus eventBus;
 
-    MyCommandHandler(Repository<StandardAggregate> repository, EventBus eventBus) {
+    MyCommandHandler(LegacyRepository<StandardAggregate> repository, EventBus eventBus) {
         this.repository = repository;
         this.eventBus = eventBus;
     }
@@ -45,20 +46,24 @@ class MyCommandHandler {
 
     @CommandHandler
     public void handleTestCommand(TestCommand testCommand) {
-        repository.load(testCommand.getAggregateIdentifier().toString(), null)
-                .execute(StandardAggregate::doSomething);
+        repository.load(testCommand.getAggregateIdentifier().toString())
+                  .execute(StandardAggregate::doSomething);
     }
 
     @CommandHandler
     public void handleStrangeCommand(StrangeCommand testCommand) {
-        repository.load(testCommand.getAggregateIdentifier().toString(), null).execute(StandardAggregate::doSomething);
-        eventBus.publish(new GenericEventMessage<>(new MyApplicationEvent()));
+        repository.load(testCommand.getAggregateIdentifier().toString()).execute(StandardAggregate::doSomething);
+        eventBus.publish(new GenericEventMessage<>(
+                new MessageType("event"), new MyApplicationEvent()
+        ));
         throw new StrangeCommandReceivedException("Strange command received");
     }
 
     @CommandHandler
     public void handleEventPublishingCommand(PublishEventCommand testCommand) {
-        eventBus.publish(new GenericEventMessage<>(new MyApplicationEvent()));
+        eventBus.publish(new GenericEventMessage<>(
+                new MessageType("event"), new MyApplicationEvent()
+        ));
     }
 
     @CommandHandler
@@ -70,10 +75,10 @@ class MyCommandHandler {
     @CommandHandler
     public void handleDeleteAggregate(DeleteCommand command) {
         repository.load(command.getAggregateIdentifier().toString())
-                .execute(r -> r.delete(command.isAsIllegalChange()));
+                  .execute(r -> r.delete(command.isAsIllegalChange()));
     }
 
-    public void setRepository(Repository<StandardAggregate> repository) {
+    public void setRepository(LegacyRepository<StandardAggregate> repository) {
         this.repository = repository;
     }
 }

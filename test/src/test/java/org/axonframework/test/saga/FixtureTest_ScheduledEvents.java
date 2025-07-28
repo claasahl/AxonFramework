@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.axonframework.test.saga;
 
+import jakarta.inject.Inject;
 import org.axonframework.eventhandling.Timestamp;
 import org.axonframework.eventhandling.scheduling.EventScheduler;
 import org.axonframework.eventhandling.scheduling.ScheduleToken;
@@ -26,7 +27,6 @@ import org.junit.jupiter.api.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
-import javax.inject.Inject;
 
 /**
  * Test class validating the event scheduler operations of the {@link SagaTestFixture}.
@@ -44,25 +44,24 @@ class FixtureTest_ScheduledEvents {
     @BeforeEach
     void setUp() {
         testSubject = new SagaTestFixture<>(EventSchedulingSaga.class);
-        testSubject.registerCommandGateway(StubGateway.class);
     }
 
     @Test
-    void testExpectScheduledEvent() {
+    void expectScheduledEvent() {
         testSubject.givenNoPriorActivity()
                    .whenPublishingA(new TriggerSagaStartEvent(IDENTIFIER))
                    .expectScheduledEvent(TRIGGER_DURATION_MINUTES, EVENT_TO_SCHEDULE);
     }
 
     @Test
-    void testExpectScheduledEventOfType() {
+    void expectScheduledEventOfType() {
         testSubject.givenNoPriorActivity()
                    .whenPublishingA(new TriggerSagaStartEvent(IDENTIFIER))
                    .expectScheduledEventOfType(TRIGGER_DURATION_MINUTES, String.class);
     }
 
     @Test
-    void testExpectScheduledEventDurationAdjustedByElapsedTime() {
+    void expectScheduledEventDurationAdjustedByElapsedTime() {
         Duration elapsedTime = Duration.ofMinutes(1);
 
         testSubject.givenAggregate(IDENTIFIER)
@@ -73,7 +72,7 @@ class FixtureTest_ScheduledEvents {
     }
 
     @Test
-    void testNoExpectScheduledEvent() {
+    void noExpectScheduledEvent() {
         testSubject.givenAggregate(IDENTIFIER)
                    .published(new TriggerSagaStartEvent(IDENTIFIER))
                    .whenAggregate(IDENTIFIER)
@@ -82,7 +81,7 @@ class FixtureTest_ScheduledEvents {
     }
 
     @Test
-    void testNoExpectScheduledEventOfType() {
+    void noExpectScheduledEventOfType() {
         testSubject.givenAggregate(IDENTIFIER)
                    .published(new TriggerSagaStartEvent(IDENTIFIER))
                    .whenAggregate(IDENTIFIER)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package org.axonframework.modelling.command;
 
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.modelling.command.inspection.AggregateModel;
-import org.axonframework.eventhandling.EventHandler;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,9 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.axonframework.eventhandling.EventTestUtils.asEventMessage;
 import static org.axonframework.modelling.command.inspection.AnnotatedAggregateMetaModelFactory.inspectAggregate;
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 class EntityEventForwardingModelInspectorTest {
 
@@ -37,7 +37,7 @@ class EntityEventForwardingModelInspectorTest {
     private static final String ANOTHER_ENTITY_ID = "anotherEntityId";
 
     @Test
-    void testExpectEventsToBeRoutedToNoEntityForForwardModeSetToNone() {
+    void expectEventsToBeRoutedToNoEntityForForwardModeSetToNone() {
         AggregateModel<SomeNoneEventForwardingEntityAggregate> inspector =
                 inspectAggregate(SomeNoneEventForwardingEntityAggregate.class);
 
@@ -54,7 +54,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnly() {
+    void expectEventsToBeRoutedToRightEntityOnly() {
         AggregateModel<SomeEventForwardingEntityAggregate> inspector =
                 inspectAggregate(SomeEventForwardingEntityAggregate.class);
 
@@ -72,7 +72,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyViaMethod() {
+    void expectEventsToBeRoutedToRightEntityOnlyViaMethod() {
         AggregateModel<SomeGetterEventForwardingEntityAggregate> inspector =
                 inspectAggregate(SomeGetterEventForwardingEntityAggregate.class);
 
@@ -90,7 +90,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyWithSpecificRoutingKey() {
+    void expectEventsToBeRoutedToRightEntityOnlyWithSpecificRoutingKey() {
         AggregateModel<SomeEventForwardingEntityAggregateWithSpecificEventRoutingKey> inspector =
                 inspectAggregate(SomeEventForwardingEntityAggregateWithSpecificEventRoutingKey.class);
 
@@ -109,7 +109,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyWithSpecificRoutingKeyViaMethod() {
+    void expectEventsToBeRoutedToRightEntityOnlyWithSpecificRoutingKeyViaMethod() {
         AggregateModel<SomeGetterEventForwardingEntityAggregateWithSpecificEventRoutingKey> inspector =
                 inspectAggregate(SomeGetterEventForwardingEntityAggregateWithSpecificEventRoutingKey.class);
 
@@ -128,7 +128,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyForEntityCollection() {
+    void expectEventsToBeRoutedToRightEntityOnlyForEntityCollection() {
         AggregateModel<SomeEventForwardingEntityCollectionAggregate> inspector =
                 inspectAggregate(SomeEventForwardingEntityCollectionAggregate.class);
 
@@ -148,7 +148,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyForEntityCollectionViaMethod() {
+    void expectEventsToBeRoutedToRightEntityOnlyForEntityCollectionViaMethod() {
         AggregateModel<SomeGetterEventForwardingEntityCollectionAggregate> inspector =
                 inspectAggregate(SomeGetterEventForwardingEntityCollectionAggregate.class);
 
@@ -168,7 +168,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyForEntityMap() {
+    void expectEventsToBeRoutedToRightEntityOnlyForEntityMap() {
         AggregateModel<SomeEventForwardingEntityMapAggregate> inspector =
                 inspectAggregate(SomeEventForwardingEntityMapAggregate.class);
 
@@ -188,7 +188,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyForEntityMapViaMethod() {
+    void expectEventsToBeRoutedToRightEntityOnlyForEntityMapViaMethod() {
         AggregateModel<SomeGetterEventForwardingEntityMapAggregate> inspector =
                 inspectAggregate(SomeGetterEventForwardingEntityMapAggregate.class);
 
@@ -208,7 +208,7 @@ class EntityEventForwardingModelInspectorTest {
     }
 
     @Test
-    void testExpectEventsToBeRoutedToRightEntityOnlyWithMultipleEntities() {
+    void expectEventsToBeRoutedToRightEntityOnlyWithMultipleEntities() {
         AggregateModel<SomeMixedEventForwardingEntityAggregate> inspector =
                 inspectAggregate(SomeMixedEventForwardingEntityAggregate.class);
 

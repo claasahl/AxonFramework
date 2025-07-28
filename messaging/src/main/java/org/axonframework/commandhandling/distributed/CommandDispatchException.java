@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,6 @@ import org.axonframework.common.AxonException;
  * @since 2.0
  */
 public class CommandDispatchException extends AxonException {
-
-    private static final long serialVersionUID = 4587368927394283730L;
 
     /**
      * Initializes the exception using the given {@code message}.

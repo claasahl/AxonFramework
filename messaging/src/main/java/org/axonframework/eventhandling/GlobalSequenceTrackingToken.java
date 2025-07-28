@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,12 +18,12 @@ package org.axonframework.eventhandling;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import org.axonframework.common.Assert;
 
 import java.beans.ConstructorProperties;
-import java.io.Serializable;
 import java.util.Objects;
 import java.util.OptionalLong;
+
+import static org.axonframework.common.Assert.isTrue;
 
 /**
  * Tracking token based on the global sequence number of an event.
@@ -31,10 +31,7 @@ import java.util.OptionalLong;
  * @author Rene de Waele
  * @since 3.0
  */
-public class GlobalSequenceTrackingToken implements TrackingToken, Comparable<GlobalSequenceTrackingToken>,
-                                                    Serializable {
-
-    private static final long serialVersionUID = -3658606104934080049L;
+public class GlobalSequenceTrackingToken implements TrackingToken, Comparable<GlobalSequenceTrackingToken> {
 
     private final long globalIndex;
 
@@ -80,9 +77,10 @@ public class GlobalSequenceTrackingToken implements TrackingToken, Comparable<Gl
 
     @Override
     public TrackingToken lowerBound(TrackingToken other) {
-        Assert.isTrue(other instanceof GlobalSequenceTrackingToken, () -> "Incompatible token type provided.");
-        GlobalSequenceTrackingToken otherToken = (GlobalSequenceTrackingToken) other;
+        isTrue(other instanceof GlobalSequenceTrackingToken,
+               () -> "Incompatible token type provided:" + other.getClass().getSimpleName());
 
+        GlobalSequenceTrackingToken otherToken = (GlobalSequenceTrackingToken) other;
         if (otherToken.globalIndex < this.globalIndex) {
             return otherToken;
         } else {
@@ -92,7 +90,9 @@ public class GlobalSequenceTrackingToken implements TrackingToken, Comparable<Gl
 
     @Override
     public TrackingToken upperBound(TrackingToken other) {
-        Assert.isTrue(other instanceof GlobalSequenceTrackingToken, () -> "Incompatible token type provided.");
+        isTrue(other instanceof GlobalSequenceTrackingToken,
+               () -> "Incompatible token type provided:" + other.getClass().getSimpleName());
+
         if (((GlobalSequenceTrackingToken) other).globalIndex > this.globalIndex) {
             return other;
         }
@@ -101,8 +101,8 @@ public class GlobalSequenceTrackingToken implements TrackingToken, Comparable<Gl
 
     @Override
     public boolean covers(TrackingToken other) {
-        Assert.isTrue(other == null || other instanceof GlobalSequenceTrackingToken,
-                      () -> "Incompatible token type provided:" + other.getClass().getSimpleName());
+        isTrue(other == null || other instanceof GlobalSequenceTrackingToken,
+               () -> "Incompatible token type provided:" + (other != null ? other.getClass().getSimpleName() : "null"));
         GlobalSequenceTrackingToken otherToken = (GlobalSequenceTrackingToken) other;
 
         return otherToken == null || otherToken.globalIndex <= this.globalIndex;

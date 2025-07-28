@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,16 @@
 package org.axonframework.modelling.saga.metamodel;
 
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.modelling.saga.AssociationValue;
-import org.axonframework.modelling.saga.SagaMethodMessageHandlingMember;
 import org.axonframework.messaging.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.annotation.HandlerDefinition;
+import org.axonframework.messaging.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.modelling.saga.AssociationValue;
+import org.axonframework.modelling.saga.SagaMethodMessageHandlingMember;
 
 import java.util.List;
 import java.util.Map;
@@ -38,21 +40,22 @@ import java.util.stream.Collectors;
 public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
 
     private final Map<Class<?>, SagaModel<?>> registry = new ConcurrentHashMap<>();
+    private final Map<Class<?>, MessageHandlerInterceptorMemberChain<?>> interceptorRegistry = new ConcurrentHashMap<>();
 
     private final ParameterResolverFactory parameterResolverFactory;
     private final HandlerDefinition handlerDefinition;
 
     /**
-     * Initializes a {@link AnnotationSagaMetaModelFactory} with {@link ClasspathParameterResolverFactory} and {@link
-     * ClasspathHandlerDefinition}.
+     * Initializes a {@link AnnotationSagaMetaModelFactory} with {@link ClasspathParameterResolverFactory} and
+     * {@link ClasspathHandlerDefinition}.
      */
     public AnnotationSagaMetaModelFactory() {
         this(ClasspathParameterResolverFactory.forClassLoader(Thread.currentThread().getContextClassLoader()));
     }
 
     /**
-     * Initializes a {@link AnnotationSagaMetaModelFactory} with given {@code parameterResolverFactory} and {@link
-     * ClasspathHandlerDefinition}.
+     * Initializes a {@link AnnotationSagaMetaModelFactory} with given {@code parameterResolverFactory} and
+     * {@link ClasspathHandlerDefinition}.
      *
      * @param parameterResolverFactory factory for event handler parameter resolvers
      */
@@ -62,8 +65,8 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
     }
 
     /**
-     * Initializes a {@link AnnotationSagaMetaModelFactory} with given {@code parameterResolverFactory} and given {@code
-     * handlerDefinition}.
+     * Initializes a {@link AnnotationSagaMetaModelFactory} with given {@code parameterResolverFactory} and given
+     * {@code handlerDefinition}.
      *
      * @param parameterResolverFactory factory for event handler parameter resolvers
      * @param handlerDefinition        the handler definition used to create concrete handlers
@@ -80,28 +83,47 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
         return (SagaModel<T>) registry.computeIfAbsent(sagaType, this::doCreateModel);
     }
 
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> MessageHandlerInterceptorMemberChain<T> chainedInterceptor(Class<T> sagaType) {
+        return (MessageHandlerInterceptorMemberChain<T>) interceptorRegistry.computeIfAbsent(sagaType,
+                                                                                             this::doCreateChain);
+    }
+
     private <T> SagaModel<T> doCreateModel(Class<T> sagaType) {
         AnnotatedHandlerInspector<T> handlerInspector =
                 AnnotatedHandlerInspector.inspectType(sagaType,
                                                       parameterResolverFactory,
                                                       handlerDefinition);
 
-        return new InspectedSagaModel<>(handlerInspector.getHandlers());
+        return new InspectedSagaModel<T>(
+                handlerInspector.getHandlers(sagaType).collect(Collectors.toList())
+        );
+    }
+
+    private <T> MessageHandlerInterceptorMemberChain<T> doCreateChain(Class<T> sagaType) {
+        AnnotatedHandlerInspector<T> handlerInspector =
+                AnnotatedHandlerInspector.inspectType(sagaType,
+                                                      parameterResolverFactory,
+                                                      handlerDefinition);
+        return handlerInspector.chainedInterceptor(sagaType);
     }
 
     private class InspectedSagaModel<T> implements SagaModel<T> {
 
         private final List<MessageHandlingMember<? super T>> handlers;
 
-        public InspectedSagaModel(List<MessageHandlingMember<? super T>> handlers) {
+        public InspectedSagaModel(
+                List<MessageHandlingMember<? super T>> handlers
+        ) {
             this.handlers = handlers;
         }
 
         @Override
         @SuppressWarnings("unchecked")
-        public Optional<AssociationValue> resolveAssociation(EventMessage<?> eventMessage) {
+        public Optional<AssociationValue> resolveAssociation(EventMessage<?> eventMessage, ProcessingContext context) {
             for (MessageHandlingMember<? super T> handler : handlers) {
-                if (handler.canHandle(eventMessage)) {
+                if (handler.canHandle(eventMessage, context)) {
                     return handler.unwrap(SagaMethodMessageHandlingMember.class)
                                   .map(mh -> mh.getAssociationValue(eventMessage));
                 }
@@ -110,15 +132,16 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
         }
 
         @Override
-        public List<MessageHandlingMember<? super T>> findHandlerMethods(EventMessage<?> eventMessage) {
-            return handlers.stream().filter(h -> h.canHandle(eventMessage))
+        public List<MessageHandlingMember<? super T>> findHandlerMethods(EventMessage<?> eventMessage,
+                                                                         ProcessingContext context) {
+            return handlers.stream().filter(h -> h.canHandle(eventMessage, context))
                            .collect(Collectors.toList());
         }
 
         @Override
-        public boolean hasHandlerMethod(EventMessage<?> eventMessage) {
+        public boolean hasHandlerMethod(EventMessage<?> eventMessage, ProcessingContext context) {
             for (MessageHandlingMember<? super T> handler : handlers) {
-                if (handler.canHandle(eventMessage)) {
+                if (handler.canHandle(eventMessage, context)) {
                     return true;
                 }
             }

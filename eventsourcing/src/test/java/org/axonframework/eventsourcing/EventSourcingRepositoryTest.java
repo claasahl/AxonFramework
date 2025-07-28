@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,237 +16,271 @@
 
 package org.axonframework.eventsourcing;
 
-import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.eventhandling.GenericDomainEventMessage;
-import org.axonframework.eventsourcing.eventstore.DomainEventStream;
+import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.utils.StubDomainEvent;
-import org.axonframework.messaging.GenericMessage;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.axonframework.modelling.command.Aggregate;
-import org.axonframework.modelling.command.AggregateIdentifier;
-import org.axonframework.modelling.command.AggregateLifecycle;
-import org.axonframework.modelling.command.AggregateRoot;
-import org.axonframework.modelling.command.ConflictingAggregateVersionException;
+import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
+import org.axonframework.eventsourcing.eventstore.SourcingCondition;
+import org.axonframework.eventstreaming.EventCriteria;
+import org.axonframework.eventstreaming.Tag;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.QualifiedName;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
+import org.axonframework.modelling.repository.ManagedEntity;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 
-import static org.axonframework.messaging.MetaData.emptyInstance;
+import static org.axonframework.eventhandling.EventTestUtils.createEvent;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
+ * Test class validating the {@link EventSourcingRepository}.
+ *
  * @author Allard Buijze
  */
 class EventSourcingRepositoryTest {
 
-    private EventStore mockEventStore;
-    private EventSourcingRepository<TestAggregate> testSubject;
-    private UnitOfWork<?> unitOfWork;
-    private StubAggregateFactory stubAggregateFactory;
-    private SnapshotTriggerDefinition triggerDefinition;
-    private SnapshotTrigger snapshotTrigger;
+    private static final Set<Tag> TEST_TAGS = Set.of(new Tag("aggregateId", "id"));
+    private static final EventCriteria TEST_CRITERIA = EventCriteria.havingTags("aggregateId", "id");
+
+    private EventStore eventStore;
+    private EventStoreTransaction eventStoreTransaction;
+    private EventSourcedEntityFactory<String, String> factory;
+
+    private EventSourcingRepository<String, String> testSubject;
 
     @BeforeEach
     void setUp() {
-        mockEventStore = mock(EventStore.class);
-        stubAggregateFactory = new StubAggregateFactory();
-        snapshotTrigger = mock(SnapshotTrigger.class);
-        triggerDefinition = mock(SnapshotTriggerDefinition.class);
-        when(triggerDefinition.prepareTrigger(any())).thenReturn(snapshotTrigger);
-        testSubject = EventSourcingRepository.builder(TestAggregate.class)
-                                             .aggregateFactory(stubAggregateFactory)
-                                             .eventStore(mockEventStore)
-                                             .snapshotTriggerDefinition(triggerDefinition)
-                                             .filterByAggregateType()
-                                             .build();
-        unitOfWork = DefaultUnitOfWork.startAndGet(new GenericMessage<>("test"));
-    }
+        eventStore = mock();
+        eventStoreTransaction = mock();
+        when(eventStore.transaction(any())).thenReturn(eventStoreTransaction);
 
-    @AfterEach
-    void tearDown() {
-        if (unitOfWork.isActive()) {
-            unitOfWork.rollback();
-        }
-    }
-
-    @Test
-    void testLoadAndSaveAggregate() {
-        String identifier = UUID.randomUUID().toString();
-        DomainEventMessage event1 =
-                new GenericDomainEventMessage<>("type", identifier, (long) 1, "Mock contents", emptyInstance());
-        DomainEventMessage event2 =
-                new GenericDomainEventMessage<>("type", identifier, (long) 2, "Mock contents", emptyInstance());
-        when(mockEventStore.readEvents(identifier)).thenReturn(DomainEventStream.of(event1, event2));
-
-        Aggregate<TestAggregate> aggregate = testSubject.load(identifier, null);
-
-        assertEquals(2, aggregate.invoke(TestAggregate::getHandledEvents).size());
-        assertSame(event1, aggregate.invoke(TestAggregate::getHandledEvents).get(0));
-        assertSame(event2, aggregate.invoke(TestAggregate::getHandledEvents).get(1));
-
-        assertEquals(0, aggregate.invoke(TestAggregate::getLiveEvents).size());
-
-        // now the aggregate is loaded (and hopefully correctly locked)
-        StubDomainEvent event3 = new StubDomainEvent();
-
-        aggregate.execute(r -> r.apply(event3));
-
-        CurrentUnitOfWork.commit();
-
-        verify(mockEventStore, times(1)).publish((EventMessage) any());
-        assertEquals(1, aggregate.invoke(TestAggregate::getLiveEvents).size());
-        assertSame(event3, aggregate.invoke(TestAggregate::getLiveEvents).get(0).getPayload());
-    }
-
-    @Test
-    void testFilterEventsByType() {
-        String identifier = UUID.randomUUID().toString();
-        DomainEventMessage event1 =
-                new GenericDomainEventMessage<>("type", identifier, (long) 1, "Mock contents", emptyInstance());
-        DomainEventMessage event2 =
-                new GenericDomainEventMessage<>("otherType", identifier, (long) 1, "Other contents", emptyInstance());
-        when(mockEventStore.readEvents(identifier)).thenReturn(DomainEventStream.of(event1, event2));
-
-        Aggregate<TestAggregate> aggregate = testSubject.load(identifier, null);
-
-        assertEquals(1, aggregate.invoke(TestAggregate::getHandledEvents).size());
-        assertSame(event1, aggregate.invoke(TestAggregate::getHandledEvents).get(0));
-
-        assertEquals(0, aggregate.invoke(TestAggregate::getLiveEvents).size());
-    }
-
-    @Test
-    void testLoad_FirstEventIsSnapshot() {
-        String identifier = UUID.randomUUID().toString();
-        TestAggregate aggregate = new TestAggregate(identifier);
-        when(mockEventStore.readEvents(identifier)).thenReturn(
-                DomainEventStream.of(new GenericDomainEventMessage<>("type", identifier, 10, aggregate)));
-        assertSame(aggregate, testSubject.load(identifier).getWrappedAggregate().getAggregateRoot());
-    }
-
-    @Test
-    void testLoadWithConflictingChanges() {
-        String identifier = UUID.randomUUID().toString();
-        when(mockEventStore.readEvents(identifier)).thenReturn(DomainEventStream.of(
-                new GenericDomainEventMessage<>("type", identifier, (long) 1, "Mock contents", emptyInstance()),
-                new GenericDomainEventMessage<>("type", identifier, (long) 2, "Mock contents", emptyInstance()),
-                new GenericDomainEventMessage<>("type", identifier, (long) 3, "Mock contents", emptyInstance())
-        ));
-
-        testSubject.load(identifier, 1L);
-        try {
-            CurrentUnitOfWork.commit();
-            fail("Expected ConflictingAggregateVersionException");
-        } catch (ConflictingAggregateVersionException e) {
-            assertEquals(identifier, e.getAggregateIdentifier());
-            assertEquals(1L, e.getExpectedVersion());
-            assertEquals(3L, e.getActualVersion());
-        }
-    }
-
-    @Test
-    void testLoadWithConflictingChanges_NoConflictResolverSet_UsingTooHighExpectedVersion() {
-        String identifier = UUID.randomUUID().toString();
-        when(mockEventStore.readEvents(identifier)).thenReturn(DomainEventStream.of(
-                new GenericDomainEventMessage<>("type", identifier, (long) 1, "Mock contents", emptyInstance()),
-                new GenericDomainEventMessage<>("type", identifier, (long) 2, "Mock contents", emptyInstance()),
-                new GenericDomainEventMessage<>("type", identifier, (long) 3, "Mock contents", emptyInstance())
-        ));
-
-        try {
-            testSubject.load(identifier, 100L);
-            fail("Expected ConflictingAggregateVersionException");
-        } catch (ConflictingAggregateVersionException e) {
-            assertEquals(identifier, e.getAggregateIdentifier());
-            assertEquals(100L, e.getExpectedVersion());
-            assertEquals(3L, e.getActualVersion());
-        }
-    }
-
-    @Test
-    void testLoadEventsWithSnapshotter() {
-        String identifier = UUID.randomUUID().toString();
-        when(mockEventStore.readEvents(identifier)).thenReturn(DomainEventStream.of(
-                new GenericDomainEventMessage<>("type", identifier, (long) 1, "Mock contents", emptyInstance()),
-                new GenericDomainEventMessage<>("type", identifier, (long) 2, "Mock contents", emptyInstance()),
-                new GenericDomainEventMessage<>("type", identifier, (long) 3, "Mock contents", emptyInstance())
-        ));
-        Aggregate<TestAggregate> aggregate = testSubject.load(identifier);
-        aggregate.execute(r -> r.apply(new StubDomainEvent()));
-        aggregate.execute(r -> r.apply(new StubDomainEvent()));
-
-        InOrder inOrder = Mockito.inOrder(triggerDefinition, snapshotTrigger);
-        inOrder.verify(triggerDefinition).prepareTrigger(stubAggregateFactory.getAggregateType());
-        inOrder.verify(snapshotTrigger, times(3)).eventHandled(any());
-        inOrder.verify(snapshotTrigger).initializationFinished();
-        inOrder.verify(snapshotTrigger, times(2)).eventHandled(any());
-    }
-
-    private static class StubAggregateFactory extends AbstractAggregateFactory<TestAggregate> {
-
-        public StubAggregateFactory() {
-            super(TestAggregate.class);
-        }
-
-        @Override
-        public TestAggregate doCreateAggregate(String aggregateIdentifier, DomainEventMessage firstEvent) {
-            return new TestAggregate(aggregateIdentifier);
-        }
-
-        @Override
-        public Class<TestAggregate> getAggregateType() {
-            return TestAggregate.class;
-        }
-    }
-
-    @AggregateRoot(type = "type")
-    private static class TestAggregate {
-
-        private List<EventMessage<?>> handledEvents = new ArrayList<>();
-        private List<EventMessage<?>> liveEvents = new ArrayList<>();
-
-        @AggregateIdentifier
-        private String identifier;
-
-        private TestAggregate(String identifier) {
-            this.identifier = identifier;
-        }
-
-        public void apply(Object eventPayload) {
-            AggregateLifecycle.apply(eventPayload);
-        }
-
-        public void changeState() {
-            AggregateLifecycle.apply("Test more");
-        }
-
-        @EventSourcingHandler
-        protected void handle(EventMessage event) {
-            identifier = ((DomainEventMessage<?>) event).getAggregateIdentifier();
-            handledEvents.add(event);
-            if (AggregateLifecycle.isLive()) {
-                liveEvents.add(event);
+        factory = (id, event, ctx) -> {
+            if (event != null) {
+                return id + "(" + event.getPayload() + ")";
             }
-        }
+            return id + "()";
+        };
+        testSubject = new EventSourcingRepository<>(
+                String.class,
+                String.class,
+                eventStore,
+                (id, event, context) -> factory.create(id, event, context),
+                (identifier, ctx) -> TEST_CRITERIA,
+                (entity, event, context) -> entity + "-" + event.getPayload()
+        );
+    }
 
-        public List<EventMessage<?>> getHandledEvents() {
-            return handledEvents;
-        }
+    @Test
+    void loadEventSourcedEntity() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        doReturn(MessageStream.fromStream(Stream.of(createEvent(0), createEvent(1))))
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
 
-        public List<EventMessage<?>> getLiveEvents() {
-            return liveEvents;
-        }
+        CompletableFuture<ManagedEntity<String, String>> result = testSubject.load("test", processingContext);
 
-        public String getIdentifier() {
-            return identifier;
-        }
+        assertTrue(result.isDone());
+        assertFalse(result.isCompletedExceptionally(), () -> result.exceptionNow().toString());
+        verify(eventStore, times(2)).transaction(processingContext);
+        verify(eventStoreTransaction).onAppend(any());
+        verify(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        assertEquals("test(0)-0-1", result.resultNow().entity());
+    }
+
+    @Test
+    void persistNewEntityRegistersItToListenToEvents() {
+        ProcessingContext processingContext = new StubProcessingContext();
+
+        ManagedEntity<String, String> result = testSubject.persist("id", "entity", processingContext);
+
+        verify(eventStoreTransaction).onAppend(any());
+        assertEquals("entity", result.entity());
+        assertEquals("id", result.identifier());
+    }
+
+    @Test
+    void persistAlreadyPersistedEntityDoesNotRegisterItToListenToEvents() {
+        ProcessingContext processingContext = new StubProcessingContext();
+
+        ManagedEntity<String, String> first = testSubject.persist("id", "entity", processingContext);
+        ManagedEntity<String, String> second = testSubject.persist("id", "entity", processingContext);
+
+        verify(eventStoreTransaction).onAppend(any());
+        assertSame(first, second);
+        assertEquals("entity", first.entity());
+        assertEquals("id", first.identifier());
+    }
+
+    @Test
+    void assigningEntityToOtherProcessingContextInExactFormat() throws Exception {
+        ProcessingContext processingContext = new StubProcessingContext();
+        ProcessingContext processingContext2 = new StubProcessingContext();
+        doReturn(MessageStream.fromStream(Stream.of(createEvent(0), createEvent(1))))
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        ManagedEntity<String, String> result = testSubject.load("test", processingContext).get();
+
+        testSubject.attach(result, processingContext2);
+
+        verify(eventStoreTransaction, times(2)).onAppend(any());
+    }
+
+    @Test
+    void assigningEntityToOtherProcessingContextInOtherFormat() throws Exception {
+        ProcessingContext processingContext = new StubProcessingContext();
+        ProcessingContext processingContext2 = new StubProcessingContext();
+        doReturn(MessageStream.fromStream(Stream.of(createEvent(0), createEvent(1))))
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        ManagedEntity<String, String> result = testSubject.load("test", processingContext).get();
+
+        testSubject.attach(new ManagedEntity<>() {
+            @Override
+            public String identifier() {
+                return result.identifier();
+            }
+
+            @Override
+            public String entity() {
+                return result.entity();
+            }
+
+            @Override
+            public String applyStateChange(UnaryOperator<String> change) {
+                fail("This should not have been invoked");
+                return "ERROR";
+            }
+        }, processingContext2);
+
+        verify(eventStoreTransaction, times(2)).onAppend(any());
+    }
+
+    @Test
+    void updateLoadedEventSourcedEntity() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        doReturn(MessageStream.fromStream(Stream.of(createEvent(0), createEvent(1))))
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        CompletableFuture<ManagedEntity<String, String>> result = testSubject.load("test", processingContext);
+
+        assertTrue(result.isDone());
+        assertFalse(result.isCompletedExceptionally());
+        verify(eventStore, times(2)).transaction(processingContext);
+        verify(eventStoreTransaction).onAppend(any());
+        verify(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+        //noinspection unchecked
+        ArgumentCaptor<Consumer<EventMessage<?>>> callback = ArgumentCaptor.forClass(Consumer.class);
+        verify(eventStoreTransaction).onAppend(callback.capture());
+        assertEquals("test(0)-0-1", result.resultNow().entity());
+
+        callback.getValue().accept(new GenericEventMessage<>(new MessageType("event"), "live"));
+        assertEquals("test(0)-0-1-live", result.resultNow().entity());
+    }
+
+    @Test
+    void loadOrCreateShouldLoadWhenEventsAreReturned() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        doReturn(MessageStream.fromStream(Stream.of(createEvent(0), createEvent(1))))
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        CompletableFuture<ManagedEntity<String, String>> result =
+                testSubject.load("test", processingContext);
+
+        assertEquals("test(0)-0-1", result.resultNow().entity());
+    }
+
+    @Test
+    void loadOrCreateThrowsExceptionWhenEventStreamIsEmptyAndNullEntityIsCreated() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        factory = (id, event, ctx) -> {
+            if (event != null) {
+                return id + "(" + event.getPayload() + ")";
+            }
+            return null; // Simulating a null entity creation
+        };
+        doReturn(MessageStream.fromStream(Stream.of()))
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        CompletableFuture<ManagedEntity<String, String>> result = testSubject.loadOrCreate("test", processingContext);
+        assertTrue(result.isCompletedExceptionally());
+        assertInstanceOf(EntityMissingAfterLoadOrCreateException.class, result.exceptionNow());
+    }
+
+    @Test
+    void loadThrowsExceptionIfNullEntityIsReturnedAfterFirstEvent() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        factory = (id, event, ctx) -> {
+            return null; // Simulating a null entity creation
+        };
+        doReturn(MessageStream.fromStream(Stream.of(createEvent(0))))
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        CompletableFuture<ManagedEntity<String, String>> result = testSubject.load("test", processingContext);
+
+        assertTrue(result.isCompletedExceptionally());
+        assertInstanceOf(EntityMissingAfterFirstEventException.class, result.exceptionNow());
+    }
+
+    @Test
+    void loadShouldReturnNullEntityWhenNoEventsAreReturned() {
+        StubProcessingContext processingContext = new StubProcessingContext();
+        doReturn(MessageStream.empty())
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        CompletableFuture<ManagedEntity<String, String>> loaded =
+                testSubject.load("test", processingContext);
+
+        assertTrue(loaded.isDone());
+        assertFalse(loaded.isCompletedExceptionally());
+        verify(eventStore, times(2)).transaction(processingContext);
+        verify(eventStoreTransaction).onAppend(any());
+        verify(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        assertNull(loaded.resultNow().entity());
+    }
+
+    @Test
+    void loadOrCreateShouldReturnNoEventMessageConstructorEntityWhenNoEventsAreReturned() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        doReturn(MessageStream.empty())
+                .when(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        CompletableFuture<ManagedEntity<String, String>> loaded =
+                testSubject.loadOrCreate("test", processingContext);
+
+        assertTrue(loaded.isDone());
+        assertFalse(loaded.isCompletedExceptionally());
+        verify(eventStore, times(2)).transaction(processingContext);
+        verify(eventStoreTransaction).onAppend(any());
+        verify(eventStoreTransaction)
+                .source(argThat(EventSourcingRepositoryTest::conditionPredicate));
+
+        assertEquals("test()", loaded.resultNow().entity());
+    }
+
+    private static boolean conditionPredicate(SourcingCondition condition) {
+        return condition.matches(new QualifiedName("ignored"), TEST_TAGS);
     }
 }

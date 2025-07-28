@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package org.axonframework.modelling.saga.repository;
 
 import org.axonframework.common.lock.Lock;
 import org.axonframework.common.lock.LockFactory;
+import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.Saga;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
 import org.junit.jupiter.api.*;
 
 import java.util.Collections;
@@ -32,6 +32,8 @@ import java.util.function.Supplier;
 import static org.mockito.Mockito.*;
 
 /**
+ * Test class validating the {@link LockingSagaRepository}.
+ *
  * @author Rene de Waele
  */
 class LockingSagaRepositoryTest {
@@ -46,30 +48,30 @@ class LockingSagaRepositoryTest {
         lock = mock(Lock.class);
         when(lockFactory.obtainLock(anyString())).thenReturn(lock);
         subject = spy(CustomSagaRepository.builder().lockFactory(lockFactory).build());
-        DefaultUnitOfWork.startAndGet(null);
+        LegacyDefaultUnitOfWork.startAndGet(null);
     }
 
     @AfterEach
     void tearDown() {
-        CurrentUnitOfWork.ifStarted(UnitOfWork::commit);
+        CurrentUnitOfWork.ifStarted(LegacyUnitOfWork::commit);
     }
 
     @Test
-    void testLockReleasedOnUnitOfWorkCleanUpAfterCreate() {
+    void lockReleasedOnUnitOfWorkCleanUpAfterCreate() {
         subject.createInstance("id", Object::new);
         verify(lockFactory).obtainLock("id");
         verify(subject).doCreateInstance(eq("id"), any());
-        verifyZeroInteractions(lock);
+        verifyNoInteractions(lock);
         CurrentUnitOfWork.commit();
         verify(lock).release();
     }
 
     @Test
-    void testLockReleasedOnUnitOfWorkCleanUpAfterLoad() {
+    void lockReleasedOnUnitOfWorkCleanUpAfterLoad() {
         subject.load("id");
         verify(lockFactory).obtainLock("id");
         verify(subject).doLoad("id");
-        verifyZeroInteractions(lock);
+        verifyNoInteractions(lock);
         CurrentUnitOfWork.commit();
         verify(lock).release();
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ class AssociationValueMapTest {
     }
 
     @Test
-    void testStoreVarietyOfItems() {
+    void storeVarietyOfItems() {
         assertTrue(testSubject.isEmpty());
 
         Object anObject = new Object();
@@ -63,8 +63,8 @@ class AssociationValueMapTest {
     }
 
     @Test
-    void testRemoveItems() {
-        testStoreVarietyOfItems();
+    void removeItems() {
+        storeVarietyOfItems();
         assertEquals(6, testSubject.size(), "Wrong initial item count");
         testSubject.remove(av("a"), "T", "1");
         assertEquals(5, testSubject.size(), "Wrong item count");
@@ -81,7 +81,7 @@ class AssociationValueMapTest {
     }
 
     @Test
-    void testFindAssociations() {
+    void findAssociations() {
         List<AssociationValue> usedAssociations = new ArrayList<>(1000);
         for (int t = 0; t < 1000; t++) {
             String key = UUID.randomUUID().toString();

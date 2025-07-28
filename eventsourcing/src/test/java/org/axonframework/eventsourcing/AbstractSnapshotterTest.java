@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,91 +16,97 @@
 
 package org.axonframework.eventsourcing;
 
-import org.axonframework.common.ReflectionUtils;
+import jakarta.annotation.Nonnull;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.core.LogEvent;
 import org.axonframework.common.transaction.Transaction;
 import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
-import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.utils.RecordingAppender;
 import org.axonframework.messaging.Message;
-import org.axonframework.messaging.MetaData;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
 import org.axonframework.modelling.command.ConcurrencyException;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatcher;
-import org.mockito.InOrder;
-import org.slf4j.Logger;
+import org.axonframework.tracing.TestSpanFactory;
+import org.junit.jupiter.api.*;
+import org.mockito.*;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
+import java.util.Collections;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.Executor;
 
-import static org.axonframework.eventsourcing.utils.EventStoreTestUtils.createEvent;
-import static org.axonframework.eventsourcing.utils.EventStoreTestUtils.createEvents;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.argThat;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.isA;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.axonframework.eventhandling.DomainEventTestUtils.createDomainEvent;
+import static org.axonframework.eventhandling.DomainEventTestUtils.createDomainEvents;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
- * @author Allard Buijze
- * @author Nakul Mishra
+ * Test class validating the {@link AbstractSnapshotter}.
  */
 class AbstractSnapshotterTest {
 
+    private LegacyEventStore mockEventStore;
+    private TestSpanFactory spanFactory;
+
     private AbstractSnapshotter testSubject;
-    private EventStore mockEventStore;
-    private Logger logger;
-    private Logger originalLogger;
 
     @BeforeEach
     void setUp() throws Exception {
-        mockEventStore = mock(EventStore.class);
-        testSubject = TestSnapshotter.builder().eventStore(mockEventStore).build();
-        logger = mock(Logger.class);
-        originalLogger = replaceLogger(logger);
+        mockEventStore = mock(LegacyEventStore.class);
+        spanFactory = new TestSpanFactory();
+        SnapshotterSpanFactory snapshotterSpanFactory = DefaultSnapshotterSpanFactory.builder()
+                                                                                     .spanFactory(spanFactory)
+                                                                                     .build();
+        testSubject = TestSnapshotter.builder()
+                                     .eventStore(mockEventStore)
+                                     .spanFactory(snapshotterSpanFactory)
+                                     .build();
     }
 
     @AfterEach
-    void tearDown() throws Exception {
-        if (originalLogger != null) {
-            replaceLogger(originalLogger);
-        }
+    void tearDown() {
         if (CurrentUnitOfWork.isStarted()) {
             CurrentUnitOfWork.get().rollback();
         }
     }
 
     @Test
-    void testScheduleSnapshot() {
+    void scheduleSnapshot() {
         String aggregateIdentifier = "aggregateIdentifier";
-        when(mockEventStore.readEvents(aggregateIdentifier))
-                .thenReturn(DomainEventStream.of(createEvents(2)));
+        when(mockEventStore.readEvents(aggregateIdentifier)).thenReturn(DomainEventStream.of(createDomainEvents(2)));
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
         verify(mockEventStore).storeSnapshot(argThat(event(aggregateIdentifier, 1)));
     }
 
     @Test
-    void testScheduleSnapshotIsPostponedUntilUnitOfWorkAfterCommit() {
-        DefaultUnitOfWork<Message<?>> uow = DefaultUnitOfWork.startAndGet(null);
+    void snapshotTracing() {
         String aggregateIdentifier = "aggregateIdentifier";
         when(mockEventStore.readEvents(aggregateIdentifier))
-                .thenReturn(DomainEventStream.of(createEvents(2)));
+                .thenAnswer(invocation -> {
+                    spanFactory.verifySpanActive("Snapshotter.scheduleSnapshot(Object)");
+                    spanFactory.verifySpanActive("Snapshotter.createSnapshot(Object)");
+                    return DomainEventStream.of(createDomainEvents(2));
+                });
+        testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
+        verify(mockEventStore).storeSnapshot(argThat(event(aggregateIdentifier, 1)));
+        spanFactory.verifySpanCompleted("Snapshotter.scheduleSnapshot(Object)");
+        spanFactory.verifySpanCompleted("Snapshotter.createSnapshot(Object)");
+        spanFactory.verifySpanHasType("Snapshotter.scheduleSnapshot(Object)", TestSpanFactory.TestSpanType.INTERNAL);
+        spanFactory.verifySpanHasType("Snapshotter.createSnapshot(Object)",
+                                      TestSpanFactory.TestSpanType.INTERNAL);
+    }
+
+    @Test
+    void scheduleSnapshotIsPostponedUntilUnitOfWorkAfterCommit() {
+        LegacyDefaultUnitOfWork<Message<?>> uow = LegacyDefaultUnitOfWork.startAndGet(null);
+        String aggregateIdentifier = "aggregateIdentifier";
+        when(mockEventStore.readEvents(aggregateIdentifier)).thenReturn(DomainEventStream.of(createDomainEvents(2)));
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
         verify(mockEventStore, never()).storeSnapshot(argThat(event(aggregateIdentifier, 1)));
 
@@ -110,11 +116,10 @@ class AbstractSnapshotterTest {
     }
 
     @Test
-    void testScheduleSnapshotOnlyOnce() {
-        DefaultUnitOfWork<Message<?>> uow = DefaultUnitOfWork.startAndGet(null);
+    void scheduleSnapshotOnlyOnce() {
+        LegacyDefaultUnitOfWork<Message<?>> uow = LegacyDefaultUnitOfWork.startAndGet(null);
         String aggregateIdentifier = "aggregateIdentifier";
-        when(mockEventStore.readEvents(aggregateIdentifier))
-                .thenReturn(DomainEventStream.of(createEvents(2)));
+        when(mockEventStore.readEvents(aggregateIdentifier)).thenReturn(DomainEventStream.of(createDomainEvents(2)));
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
@@ -128,40 +133,42 @@ class AbstractSnapshotterTest {
     }
 
     @Test
-    void testScheduleSnapshot_ConcurrencyExceptionIsSilenced() {
+    void scheduleSnapshot_ConcurrencyExceptionIsSilenced() {
+        RecordingAppender recordingAppender = RecordingAppender.getInstance();
+        recordingAppender.startRecording(e -> e.getLevel().isMoreSpecificThan(Level.WARN));
+
         final String aggregateIdentifier = "aggregateIdentifier";
-        doNothing()
-                .doThrow(new ConcurrencyException("Mock"))
-                .when(mockEventStore).storeSnapshot(isA(DomainEventMessage.class));
+        doNothing().doThrow(new ConcurrencyException("Mock"))
+                   .when(mockEventStore).storeSnapshot(isA(DomainEventMessage.class));
         when(mockEventStore.readEvents(aggregateIdentifier))
-                .thenAnswer(invocationOnMock -> DomainEventStream.of(createEvents(2)));
+                .thenAnswer(invocationOnMock -> DomainEventStream.of(createDomainEvents(2)));
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
 
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
         verify(mockEventStore, times(2)).storeSnapshot(argThat(event(aggregateIdentifier, 1)));
-        verify(logger, never()).warn(anyString());
-        verify(logger, never()).error(anyString());
+
+        List<LogEvent> logEvents = recordingAppender.stopRecording();
+        assertEquals(Collections.emptyList(), logEvents);
     }
 
     @Test
-    void testScheduleSnapshot_SnapshotIsNull() {
+    void scheduleSnapshot_SnapshotIsNull() {
         String aggregateIdentifier = "aggregateIdentifier";
-        when(mockEventStore.readEvents(aggregateIdentifier)).thenReturn(DomainEventStream.of(createEvent()));
+        when(mockEventStore.readEvents(aggregateIdentifier)).thenReturn(DomainEventStream.of(createDomainEvent()));
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
         verify(mockEventStore, never()).storeSnapshot(any(DomainEventMessage.class));
     }
 
     @Test
-    void testScheduleSnapshot_SnapshotReplacesOneEvent() {
+    void scheduleSnapshot_SnapshotReplacesOneEvent() {
         String aggregateIdentifier = "aggregateIdentifier";
-        when(mockEventStore.readEvents(aggregateIdentifier)).thenReturn(DomainEventStream.of(createEvent(2)));
+        when(mockEventStore.readEvents(aggregateIdentifier)).thenReturn(DomainEventStream.of(createDomainEvent(2)));
         testSubject.scheduleSnapshot(Object.class, aggregateIdentifier);
         verify(mockEventStore, never()).storeSnapshot(any(DomainEventMessage.class));
     }
 
-    @SuppressWarnings("unchecked")
     @Test
-    void testScheduleSnapshot_WithTransaction() {
+    void scheduleSnapshot_WithTransaction() {
         Transaction mockTransaction = mock(Transaction.class);
         TransactionManager txManager = spy(new StubTransactionManager(mockTransaction));
         when(txManager.startTransaction()).thenReturn(mockTransaction);
@@ -171,7 +178,7 @@ class AbstractSnapshotterTest {
                                      .transactionManager(txManager)
                                      .build();
 
-        testScheduleSnapshot();
+        scheduleSnapshot();
 
         InOrder inOrder = inOrder(mockEventStore, txManager, mockTransaction);
         inOrder.verify(txManager).startTransaction();
@@ -181,7 +188,7 @@ class AbstractSnapshotterTest {
     }
 
     @Test
-    void testScheduleSnapshot_IgnoredWhenSnapshotAlreadyScheduled() {
+    void scheduleSnapshot_IgnoredWhenSnapshotAlreadyScheduled() {
         StubExecutor executor = new StubExecutor();
         testSubject = TestSnapshotter.builder().eventStore(mockEventStore).executor(executor).build();
 
@@ -198,7 +205,7 @@ class AbstractSnapshotterTest {
     }
 
     @Test
-    void testScheduleSnapshot_AcceptedWhenOtherSnapshotIsScheduled() {
+    void scheduleSnapshot_AcceptedWhenOtherSnapshotIsScheduled() {
         StubExecutor executor = new StubExecutor();
         testSubject = TestSnapshotter.builder().eventStore(mockEventStore).executor(executor).build();
 
@@ -214,21 +221,9 @@ class AbstractSnapshotterTest {
         assertEquals(1, executor.size());
     }
 
-    private ArgumentMatcher<DomainEventMessage> event(final Object aggregateIdentifier, final long i) {
-        return x -> aggregateIdentifier.equals(x.getAggregateIdentifier())
-                && x.getSequenceNumber() == i;
-    }
-
-    private Logger replaceLogger(Logger mockLogger) throws NoSuchFieldException, IllegalAccessException {
-        Field loggerField = AbstractSnapshotter.class.getDeclaredField("logger");
-        ReflectionUtils.ensureAccessible(loggerField);
-
-        Field modifiersField = Field.class.getDeclaredField("modifiers");
-        modifiersField.setAccessible(true);
-        modifiersField.setInt(loggerField, loggerField.getModifiers() & ~Modifier.FINAL);
-        Logger originalLogger = (Logger) loggerField.get(null);
-        loggerField.set(null, mockLogger);
-        return originalLogger;
+    @SuppressWarnings("SameParameterValue")
+    private ArgumentMatcher<DomainEventMessage<?>> event(final Object aggregateIdentifier, final long i) {
+        return x -> aggregateIdentifier.equals(x.getAggregateIdentifier()) && x.getSequenceNumber() == i;
     }
 
     private static class TestSnapshotter extends AbstractSnapshotter {
@@ -242,14 +237,15 @@ class AbstractSnapshotterTest {
         }
 
         @Override
-        protected DomainEventMessage createSnapshot(Class<?> aggregateType,
-                                                    String aggregateIdentifier, DomainEventStream eventStream) {
+        protected DomainEventMessage<?> createSnapshot(Class<?> aggregateType,
+                                                       String aggregateIdentifier,
+                                                       DomainEventStream eventStream) {
             long lastIdentifier = getLastIdentifierFrom(eventStream);
             if (lastIdentifier <= 0) {
                 return null;
             }
             return new GenericDomainEventMessage<>("test", aggregateIdentifier, lastIdentifier,
-                                                   "Mock contents", MetaData.emptyInstance());
+                                                   new MessageType("event"), "Mock contents");
         }
 
         private long getLastIdentifierFrom(DomainEventStream eventStream) {
@@ -263,7 +259,7 @@ class AbstractSnapshotterTest {
         private static class Builder extends AbstractSnapshotter.Builder {
 
             @Override
-            public Builder eventStore(EventStore eventStore) {
+            public Builder eventStore(LegacyEventStore eventStore) {
                 super.eventStore(eventStore);
                 return this;
             }
@@ -277,6 +273,12 @@ class AbstractSnapshotterTest {
             @Override
             public Builder transactionManager(TransactionManager transactionManager) {
                 super.transactionManager(transactionManager);
+                return this;
+            }
+
+            @Override
+            public Builder spanFactory(@Nonnull SnapshotterSpanFactory spanFactory) {
+                super.spanFactory(spanFactory);
                 return this;
             }
 
@@ -300,15 +302,16 @@ class AbstractSnapshotterTest {
         }
     }
 
-    private class StubExecutor implements Executor {
+    private static class StubExecutor implements Executor {
 
         private final Queue<Runnable> tasks = new LinkedList<>();
 
         @Override
-        public void execute(Runnable runnable) {
+        public void execute(@Nonnull Runnable runnable) {
             tasks.add(runnable);
         }
 
+        @SuppressWarnings("UnusedReturnValue")
         public boolean executeNext() {
             Runnable next = tasks.poll();
             if (next != null) {

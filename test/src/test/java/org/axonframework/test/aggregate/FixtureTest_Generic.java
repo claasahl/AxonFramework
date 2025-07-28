@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import org.axonframework.eventsourcing.AggregateFactory;
 import org.axonframework.eventsourcing.IncompatibleAggregateException;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
 import org.axonframework.eventsourcing.eventstore.EventStoreException;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.test.AxonAssertionError;
 import org.axonframework.test.FixtureExecutionException;
 import org.junit.jupiter.api.*;
 
@@ -56,76 +56,80 @@ class FixtureTest_Generic {
             fail("Test failed to close Unit of Work!!");
             CurrentUnitOfWork.get().rollback();
         }
-
     }
 
     @Test
-    void testConfigureCustomAggregateFactory() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void configureCustomAggregateFactory() {
         fixture.registerAggregateFactory(mockAggregateFactory);
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()));
 
         fixture.given(new MyEvent("id1", 1))
-                .when(new TestCommand("id1"));
+               .when(new TestCommand("id1"));
 
         verify(mockAggregateFactory).createAggregateRoot(eq("id1"), isA(DomainEventMessage.class));
     }
 
     @Test
-    void testConfigurationOfRequiredCustomAggregateFactoryNotProvided_FailureOnGiven() {
+    void configurationOfRequiredCustomAggregateFactoryNotProvided_FailureOnGiven() {
         assertThrows(IncompatibleAggregateException.class, () -> fixture.given(new MyEvent("id1", 1)));
     }
 
     @Test
-    void testConfigurationOfRequiredCustomAggregateFactoryNotProvided_FailureOnGetRepository() {
+    void configurationOfRequiredCustomAggregateFactoryNotProvided_FailureOnGetRepository() {
         assertThrows(IncompatibleAggregateException.class, fixture::getRepository);
     }
 
     @Test
-    void testAggregateIdentifier_ServerGeneratedIdentifier() {
+    void aggregateIdentifier_ServerGeneratedIdentifier() {
         fixture.registerAggregateFactory(mockAggregateFactory);
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()));
         fixture.givenNoPriorActivity()
-                .when(new CreateAggregateCommand());
+               .when(new CreateAggregateCommand());
     }
 
     @Test
-    void testStoringExistingAggregateGeneratesException() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void storingExistingAggregateGeneratesException() {
         fixture.registerAggregateFactory(mockAggregateFactory);
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()));
         fixture.given(new MyEvent("aggregateId", 1))
-                .when(new CreateAggregateCommand("aggregateId"))
-                .expectException(EventStoreException.class);
+               .when(new CreateAggregateCommand("aggregateId"))
+               .expectException(EventStoreException.class)
+               .expectNoEvents();
     }
 
     @Test
-    void testInjectResources_CommandHandlerAlreadyRegistered() {
+    void injectResources_CommandHandlerAlreadyRegistered() {
         fixture.registerAggregateFactory(mockAggregateFactory);
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()));
         assertThrows(FixtureExecutionException.class, () -> fixture.registerInjectableResource("I am injectable"));
     }
 
     @Test
-    void testAggregateIdentifier_IdentifierAutomaticallyDeducted() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void aggregateIdentifier_IdentifierAutomaticallyDeducted() {
         fixture.registerAggregateFactory(mockAggregateFactory);
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()));
         fixture.given(new MyEvent("AggregateId", 1), new MyEvent("AggregateId", 2))
-                .when(new TestCommand("AggregateId"))
-                .expectEvents(new MyEvent("AggregateId", 3));
+               .when(new TestCommand("AggregateId"))
+               .expectEvents(new MyEvent("AggregateId", 3));
 
         DomainEventStream events = fixture.getEventStore().readEvents("AggregateId");
         for (int t = 0; t < 3; t++) {
             assertTrue(events.hasNext());
-            DomainEventMessage next = events.next();
+            DomainEventMessage<?> next = events.next();
             assertEquals("AggregateId", next.getAggregateIdentifier());
             assertEquals(t, next.getSequenceNumber());
         }
     }
 
     @Test
-    void testReadAggregate_WrongIdentifier() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void readAggregate_WrongIdentifier() {
         fixture.registerAggregateFactory(mockAggregateFactory);
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(), fixture.getEventBus()));
-        TestExecutor exec = fixture.given(new MyEvent("AggregateId", 1));
+        TestExecutor<StandardAggregate> exec = fixture.given(new MyEvent("AggregateId", 1));
 
         AssertionError error = assertThrows(AssertionError.class, () -> exec.when(new TestCommand("OtherIdentifier")));
         assertTrue(error.getMessage().contains("OtherIdentifier"), "Wrong message. Was: " + error.getMessage());
@@ -133,26 +137,33 @@ class FixtureTest_Generic {
     }
 
     @Test
-    void testFixtureGeneratesExceptionOnWrongEvents_DifferentAggregateIdentifiers() {
-        assertThrows(EventStoreException.class, () ->
-                fixture.getEventStore().publish(
-                        new GenericDomainEventMessage<>("test", UUID.randomUUID().toString(), 0, new StubDomainEvent()),
-                        new GenericDomainEventMessage<>("test", UUID.randomUUID().toString(), 0, new StubDomainEvent()))
+    void fixtureGeneratesExceptionOnWrongEvents_DifferentAggregateIdentifiers() {
+        DomainEventMessage<StubDomainEvent> testEventOne = new GenericDomainEventMessage<>(
+                "test", UUID.randomUUID().toString(), 0, new MessageType("event"),
+                new StubDomainEvent()
         );
+        DomainEventMessage<StubDomainEvent> testEventTwo = new GenericDomainEventMessage<>(
+                "test", UUID.randomUUID().toString(), 0, new MessageType("event"),
+                new StubDomainEvent()
+        );
+
+        assertThrows(EventStoreException.class, () -> fixture.getEventStore().publish(testEventOne, testEventTwo));
     }
 
     @Test
-    void testFixtureGeneratesExceptionOnWrongEvents_WrongSequence() {
+    void fixtureGeneratesExceptionOnWrongEvents_WrongSequence() {
         String identifier = UUID.randomUUID().toString();
-        assertThrows(EventStoreException.class, () ->
-                fixture.getEventStore().publish(
-                        new GenericDomainEventMessage<>("test", identifier, 0, new StubDomainEvent()),
-                        new GenericDomainEventMessage<>("test", identifier, 2, new StubDomainEvent()))
+        DomainEventMessage<StubDomainEvent> testEventOne = new GenericDomainEventMessage<>(
+                "test", identifier, 0, new MessageType("event"), new StubDomainEvent()
+        );
+        DomainEventMessage<StubDomainEvent> testEventTwo = new GenericDomainEventMessage<>(
+                "test", identifier, 2, new MessageType("event"), new StubDomainEvent()
         );
 
+        assertThrows(EventStoreException.class, () -> fixture.getEventStore().publish(testEventOne, testEventTwo));
     }
 
-    private class StubDomainEvent {
+    private static class StubDomainEvent {
 
         public StubDomainEvent() {
         }

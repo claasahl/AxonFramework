@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,17 @@
 
 package org.axonframework.integrationtests.eventsourcing;
 
-import org.axonframework.commandhandling.CommandHandler;
-import org.axonframework.eventsourcing.EventSourcingHandler;
-import org.axonframework.modelling.command.TargetAggregateIdentifier;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.commandhandling.gateway.CommandGateway;
+import org.axonframework.config.LegacyConfiguration;
+import org.axonframework.config.LegacyDefaultConfigurer;
+import org.axonframework.eventsourcing.EventSourcingHandler;
+import org.axonframework.eventsourcing.eventstore.inmemory.LegacyInMemoryEventStorageEngine;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.EntityId;
-import org.axonframework.config.Configuration;
-import org.axonframework.config.DefaultConfigurer;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.junit.jupiter.api.Test;
+import org.axonframework.modelling.command.TargetAggregateIdentifier;
+import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,19 +34,23 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static java.util.Arrays.asList;
 import static org.axonframework.modelling.command.AggregateLifecycle.apply;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 class NestedUnitOfWorkTest {
-    @Test
-    void testStagedEventsLoadInCorrectOrder() {
-        Configuration config = DefaultConfigurer.defaultConfiguration()
-                                                .configureAggregate(TestAggregate.class)
-                                                .registerCommandHandler(x -> new Handler())
-                                                .configureEmbeddedEventStore(x -> new InMemoryEventStorageEngine())
-                                                .registerComponent(List.class, c -> new CopyOnWriteArrayList<>())
-                                                .buildConfiguration();
 
+    // This ensures we do not wire Axon Server components
+    private static final boolean DO_NOT_AUTO_LOCATE_CONFIGURER_MODULES = false;
+
+    @Test
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void stagedEventsLoadInCorrectOrder() {
+        LegacyConfiguration config =
+                LegacyDefaultConfigurer.defaultConfiguration(DO_NOT_AUTO_LOCATE_CONFIGURER_MODULES)
+                                       .configureAggregate(TestAggregate.class)
+                                       .registerCommandHandler(x -> new Handler())
+                                       .configureEmbeddedEventStore(x -> new LegacyInMemoryEventStorageEngine())
+                                       .registerComponent(List.class, c -> new CopyOnWriteArrayList<>())
+                                       .buildConfiguration();
 
         config.start();
         CommandGateway gw = config.commandGateway();
@@ -54,19 +60,21 @@ class NestedUnitOfWorkTest {
 
         config.shutdown();
 
-        assertEquals(asList("pre-rollback-first","pre-rollback-second",
-                            "post-rollback-first","post-rollback-second",
+        assertEquals(asList("pre-rollback-first", "pre-rollback-second",
+                            "post-rollback-first", "post-rollback-second",
                             "from-eventstore-first", "from-eventstore-second"),
                      config.getComponent(List.class));
     }
 
     static class TestAggregate {
+
         @EntityId
         String id;
         List<String> items = new ArrayList<>();
 
         @CommandHandler
-        public TestAggregate(Create cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(Create cmd) {
             apply(cmd);
         }
 
@@ -95,6 +103,7 @@ class NestedUnitOfWorkTest {
     }
 
     static class Create {
+
         @TargetAggregateIdentifier
         String id;
 
@@ -104,6 +113,7 @@ class NestedUnitOfWorkTest {
     }
 
     static class Add {
+
         @TargetAggregateIdentifier
         String id;
         String item;
@@ -115,6 +125,7 @@ class NestedUnitOfWorkTest {
     }
 
     static class ShowItems {
+
         @TargetAggregateIdentifier
         String id;
         String message;
@@ -126,15 +137,19 @@ class NestedUnitOfWorkTest {
     }
 
     static class Test1 {
+
     }
 
     static class Test2 {
+
     }
 
     static class Oops {
+
     }
 
     static class Handler {
+
         @CommandHandler
         public void handle(Test1 cmd, CommandGateway gw) {
             gw.sendAndWait(new Add("1", "first"));

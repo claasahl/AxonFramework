@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,19 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventhandling.ResetNotSupportedException;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
+import org.axonframework.messaging.annotation.NoMoreInterceptors;
 import org.axonframework.modelling.saga.metamodel.AnnotationSagaMetaModelFactory;
 import org.junit.jupiter.api.*;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import jakarta.annotation.Nonnull;
 
 import static org.axonframework.modelling.saga.SagaLifecycle.removeAssociationWith;
 import static org.junit.jupiter.api.Assertions.*;
@@ -49,41 +54,61 @@ class AnnotatedSagaTest {
         testSaga = new StubAnnotatedSaga();
         testSubject = new AnnotatedSaga<>(
                 "id", Collections.emptySet(), testSaga,
-                new AnnotationSagaMetaModelFactory().modelOf(StubAnnotatedSaga.class)
+                new AnnotationSagaMetaModelFactory().modelOf(StubAnnotatedSaga.class),
+                NoMoreInterceptors.instance()
         );
     }
 
     @Test
-    void testInvokeSaga() {
+    void invokeSaga() {
         testSubject.doAssociateWith(new AssociationValue("propertyName", "id"));
-        testSubject.handle(new GenericEventMessage<>(new RegularEvent("id")));
-        testSubject.handle(new GenericEventMessage<>(new RegularEvent("wrongId")));
-        testSubject.handle(new GenericEventMessage<>(new Object()));
+
+        var event1 = new GenericEventMessage<>(new MessageType("event"), new RegularEvent("id"));
+        testSubject.handleSync(event1, StubProcessingContext.forMessage(event1));
+
+        var event2 = new GenericEventMessage<>(new MessageType("event"), new RegularEvent("wrongId"));
+        testSubject.handleSync(event2, StubProcessingContext.forMessage(event2));
+
+        var event3 = new GenericEventMessage<>(new MessageType("event"), new Object());
+        testSubject.handleSync(event3, StubProcessingContext.forMessage(event3));
 
         assertEquals(1, testSaga.invocationCount);
     }
 
     @Test
-    void testInvokeSaga_AssociationPropertyNotExistingInPayload() {
+    void invokeSagaAssociationPropertyNotExistingInPayload() {
+        AnnotationSagaMetaModelFactory testSubject = new AnnotationSagaMetaModelFactory();
         assertThrows(
                 AxonConfigurationException.class,
-                () -> new AnnotationSagaMetaModelFactory().modelOf(SagaAssociationPropertyNotExistingInPayload.class)
+                () -> testSubject.modelOf(SagaAssociationPropertyNotExistingInPayload.class)
         );
     }
 
     @Test
-    void testInvokeSaga_MetaDataAssociationResolver() {
+    void invokeSagaAssociationPropertyEmpty() {
+        AnnotationSagaMetaModelFactory testSubject = new AnnotationSagaMetaModelFactory();
+        assertThrows(AxonConfigurationException.class, () -> testSubject.modelOf(SagaAssociationPropertyEmpty.class));
+    }
+
+    @Test
+    void invokeSagaMetaDataAssociationResolver() {
         testSubject.doAssociateWith(new AssociationValue("propertyName", "id"));
-        Map<String, Object> metaData = new HashMap<>();
+        Map<String, String> metaData = new HashMap<>();
         metaData.put("propertyName", "id");
-        testSubject.handle(new GenericEventMessage<>(new EventWithoutProperties(), new MetaData(metaData)));
-        testSubject.handle(new GenericEventMessage<>(new EventWithoutProperties()));
+        EventMessage<EventWithoutProperties> eventWithMetadata = new GenericEventMessage<>(
+                new MessageType("event"), new EventWithoutProperties(), new MetaData(metaData)
+        );
+        testSubject.handleSync(eventWithMetadata, StubProcessingContext.forMessage(eventWithMetadata));
+        GenericEventMessage<EventWithoutProperties> eventWithoutMetadata = new GenericEventMessage<>(new MessageType(
+                "event"),
+                                                                                                     new EventWithoutProperties());
+        testSubject.handleSync(eventWithoutMetadata, StubProcessingContext.forMessage(eventWithoutMetadata));
 
         assertEquals(1, testSaga.invocationCount);
     }
 
     @Test
-    void testInvokeSaga_ResolverWithoutNoArgConstructor() {
+    void invokeSagaResolverWithoutNoArgConstructor() {
         assertThrows(
                 AxonConfigurationException.class,
                 () -> new AnnotationSagaMetaModelFactory().modelOf(SagaUsingResolverWithoutNoArgConstructor.class)
@@ -91,62 +116,93 @@ class AnnotatedSagaTest {
     }
 
     @Test
-    void testEndedAfterInvocation_BeanProperty() {
+    void endedAfterInvocationBeanProperty() {
         testSubject.doAssociateWith(new AssociationValue("propertyName", "id"));
-        testSubject.handle(new GenericEventMessage<>(new RegularEvent("id")));
-        testSubject.handle(new GenericEventMessage<>(new Object()));
-        testSubject.handle(new GenericEventMessage<>(new SagaEndEvent("id")));
+        var event1 = new GenericEventMessage<>(new MessageType("event"),
+                                               new RegularEvent("id"));
+        testSubject.handleSync(event1, StubProcessingContext.forMessage(event1));
+        var event2 = new GenericEventMessage<>(new MessageType("event"), new Object());
+        testSubject.handleSync(event2, StubProcessingContext.forMessage(event2));
+        var event3 = new GenericEventMessage<>(new MessageType("event"),
+                                               new SagaEndEvent("id"));
+        testSubject.handleSync(event3, StubProcessingContext.forMessage(event3));
 
         assertEquals(2, testSaga.invocationCount);
         assertFalse(testSubject.isActive());
     }
 
     @Test
-    void testEndedAfterInvocation_WhenAssociationIsRemoved() {
+    void endedAfterInvocationWhenAssociationIsRemoved() {
         StubAnnotatedSaga testSaga = new StubAnnotatedSagaWithExplicitAssociationRemoval();
         AnnotatedSaga<StubAnnotatedSaga> testSubject = new AnnotatedSaga<>(
                 "id", Collections.emptySet(), testSaga,
-                new AnnotationSagaMetaModelFactory().modelOf(StubAnnotatedSaga.class)
+                new AnnotationSagaMetaModelFactory().modelOf(StubAnnotatedSaga.class),
+                NoMoreInterceptors.instance()
         );
 
         testSubject.doAssociateWith(new AssociationValue("propertyName", "id"));
-        testSubject.handle(new GenericEventMessage<>(new RegularEvent("id")));
-        testSubject.handle(new GenericEventMessage<>(new Object()));
-        testSubject.handle(new GenericEventMessage<>(new SagaEndEvent("id")));
+        var event1 = new GenericEventMessage<>(new MessageType("event"),
+                                               new RegularEvent("id"));
+        testSubject.handleSync(event1, StubProcessingContext.forMessage(event1));
+        var event2 = new GenericEventMessage<>(new MessageType("event"), new Object());
+        testSubject.handleSync(event2, StubProcessingContext.forMessage(event2));
+        var event3 = new GenericEventMessage<>(new MessageType("event"),
+                                               new SagaEndEvent("id"));
+        testSubject.handleSync(event3, StubProcessingContext.forMessage(event3));
 
         assertEquals(2, testSaga.invocationCount);
         assertFalse(testSubject.isActive());
     }
 
     @Test
-    void testEndedAfterInvocation_UniformAccessPrinciple() {
+    void endedAfterInvocationUniformAccessPrinciple() {
         testSubject.doAssociateWith(new AssociationValue("propertyName", "id"));
-        testSubject.handle(new GenericEventMessage<>(new UniformAccessEvent("id")));
-        testSubject.handle(new GenericEventMessage<>(new Object()));
-        testSubject.handle(new GenericEventMessage<>(new SagaEndEvent("id")));
+        var event1 = new GenericEventMessage<>(new MessageType("event"), new UniformAccessEvent("id"));
+        testSubject.handleSync(event1, StubProcessingContext.forMessage(event1));
+        var event2 = new GenericEventMessage<>(new MessageType("event"), new Object());
+        testSubject.handleSync(event2, StubProcessingContext.forMessage(event2));
+        var event3 = new GenericEventMessage<>(new MessageType("event"), new SagaEndEvent("id"));
+        testSubject.handleSync(event3, StubProcessingContext.forMessage(event3));
 
         assertEquals(2, testSaga.invocationCount);
         assertFalse(testSubject.isActive());
     }
 
     @Test
-    void testPrepareResetThrowsResetNotSupportedException() {
+    void prepareResetThrowsResetNotSupportedException() {
         AnnotatedSaga<StubAnnotatedSaga> spiedTestSubject = spy(testSubject);
 
-        assertThrows(ResetNotSupportedException.class, spiedTestSubject::prepareReset);
+        assertThrows(ResetNotSupportedException.class, () -> spiedTestSubject.prepareReset(null));
 
-        verify(spiedTestSubject).prepareReset(null);
+        verify(spiedTestSubject).prepareReset(null, null);
     }
 
     @Test
-    void testPrepareResetWithResetContextThrowsResetNotSupportedException() {
-        assertThrows(ResetNotSupportedException.class, () -> testSubject.prepareReset("some-reset-context"));
+    void prepareResetWithResetContextThrowsResetNotSupportedException() {
+        assertThrows(ResetNotSupportedException.class, () -> testSubject.prepareReset("some-reset-context", null));
+    }
+
+    @Test
+    void lifecycleAssociationValues() {
+        testSubject.doAssociateWith(new AssociationValue("propertyName", "id"));
+        testSubject.execute(() -> {
+            Set<AssociationValue> associationValues = SagaLifecycle.associationValues();
+            assertEquals(1, associationValues.size());
+            assertTrue(associationValues.contains(new AssociationValue("propertyName", "id")));
+        });
+
+        testSubject.doAssociateWith(new AssociationValue("someOtherProperty", "3"));
+        testSubject.execute(() -> {
+            Set<AssociationValue> associationValues = SagaLifecycle.associationValues();
+            assertEquals(2, associationValues.size());
+            assertTrue(associationValues.contains(new AssociationValue("propertyName", "id")));
+            assertTrue(associationValues.contains(new AssociationValue("someOtherProperty", "3")));
+        });
     }
 
     @SuppressWarnings("unused")
     private static class StubAnnotatedSaga {
 
-        private static final long serialVersionUID = -3224806999195676097L;
         private int invocationCount = 0;
 
         @SagaEventHandler(associationProperty = "propertyName")
@@ -200,6 +256,14 @@ class AnnotatedSagaTest {
         }
     }
 
+    private static class SagaAssociationPropertyEmpty {
+
+        @SuppressWarnings("unused")
+        @SagaEventHandler(associationProperty = "")
+        public void handleStubDomainEvent(EventWithoutProperties event) {
+        }
+    }
+
     private static class RegularEvent {
 
         private final String propertyName;
@@ -213,18 +277,8 @@ class AnnotatedSagaTest {
         }
     }
 
-    private static class UniformAccessEvent {
+    private record UniformAccessEvent(String propertyName) {
 
-        private final String propertyName;
-
-        public UniformAccessEvent(String propertyName) {
-            this.propertyName = propertyName;
-        }
-
-        @SuppressWarnings("unused")
-        public String propertyName() {
-            return propertyName;
-        }
     }
 
     private static class EventWithoutProperties {
@@ -247,13 +301,13 @@ class AnnotatedSagaTest {
         }
 
         @Override
-        public <T> void validate(String associationPropertyName, MessageHandlingMember<T> handler) {
+        public <T> void validate(@Nonnull String associationPropertyName, @Nonnull MessageHandlingMember<T> handler) {
 
         }
 
         @Override
-        public <T> Object resolve(String associationPropertyName, EventMessage<?> message,
-                                  MessageHandlingMember<T> handler) {
+        public <T> Object resolve(@Nonnull String associationPropertyName, @Nonnull EventMessage<?> message,
+                                  @Nonnull MessageHandlingMember<T> handler) {
             return null;
         }
     }

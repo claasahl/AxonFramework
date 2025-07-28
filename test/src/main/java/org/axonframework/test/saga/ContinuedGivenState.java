@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2014. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -76,9 +76,9 @@ public interface ContinuedGivenState extends WhenState {
      * sagas.
      *
      * @param event The event to publish
-     * @param metaData The meta data to attach to the event
+     * @param metaData The metadata to attach to the event
      * @return an object that allows chaining of more given state
      * @throws Exception if an exception happens when the event is handled
      */
-    ContinuedGivenState andThenAPublished(Object event, Map<String, ?> metaData);
+    ContinuedGivenState andThenAPublished(Object event, Map<String, String> metaData);
 }

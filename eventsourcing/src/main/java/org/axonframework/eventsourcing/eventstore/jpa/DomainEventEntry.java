@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,16 @@
 
 package org.axonframework.eventsourcing.eventstore.jpa;
 
+import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
 import org.axonframework.eventhandling.AbstractSequencedDomainEventEntry;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.serialization.Serializer;
 
-import javax.persistence.Entity;
-import javax.persistence.Index;
-import javax.persistence.Table;
-
 /**
  * Default implementation of a tracked domain event entry. This implementation is used by the {@link
- * JpaEventStorageEngine} to store events. Event payload and metadata are serialized to a byte array.
+ * LegacyJpaEventStorageEngine} to store events. Event payload and metadata are serialized to a byte array.
  *
  * @author Rene de Waele
  */

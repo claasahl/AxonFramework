@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,11 +25,11 @@ import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventhandling.scheduling.EventScheduler;
 import org.axonframework.eventhandling.scheduling.ScheduleToken;
-import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
-import org.axonframework.messaging.MetaData;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.MessageTypeResolver;
+import org.axonframework.messaging.QualifiedName;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,8 +49,8 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * mechanism.
  * <p/>
  * Note that this mechanism is non-persistent. Scheduled tasks will be lost when the JVM is shut down, unless special
- * measures have been taken to prevent that. For more flexible and powerful scheduling options, see {@link
- * org.axonframework.eventhandling.scheduling.quartz.QuartzEventScheduler}.
+ * measures have been taken to prevent that. For more flexible and powerful scheduling options, see
+ * {@link org.axonframework.eventhandling.scheduling.quartz.QuartzEventScheduler}.
  *
  * @author Allard Buijze
  * @see org.axonframework.eventhandling.scheduling.quartz.QuartzEventScheduler
@@ -63,32 +63,34 @@ public class SimpleEventScheduler implements EventScheduler {
     private final ScheduledExecutorService scheduledExecutorService;
     private final EventBus eventBus;
     private final TransactionManager transactionManager;
+    private final MessageTypeResolver messageTypeResolver;
 
     private final Map<String, Future<?>> tokens = new ConcurrentHashMap<>();
 
     /**
-     * Instantiate a {@link SimpleEventScheduler} based on the fields contained in the {@link Builder}.
+     * Instantiate a {@code SimpleEventScheduler} based on the fields contained in the {@link Builder}.
      * <p>
      * Will assert that the {@link ScheduledExecutorService}, {@link EventBus} and {@link TransactionManager} are not
      * {@code null}, and will throw an {@link AxonConfigurationException} if any of them is {@code null}.
      *
-     * @param builder the {@link Builder} used to instantiate a {@link SimpleEventScheduler} instance
+     * @param builder the {@link Builder} used to instantiate a {@code SimpleEventScheduler} instance
      */
     protected SimpleEventScheduler(Builder builder) {
         builder.validate();
         this.scheduledExecutorService = builder.scheduledExecutorService;
         this.eventBus = builder.eventBus;
         this.transactionManager = builder.transactionManager;
+        this.messageTypeResolver = builder.messageTypeResolver;
     }
 
     /**
-     * Instantiate a Builder to be able to create a {@link SimpleEventScheduler}.
+     * Instantiate a Builder to be able to create a {@code SimpleEventScheduler}.
      * <p>
      * The {@link TransactionManager} is defaulted to a {@link NoTransactionManager}. The
      * {@link ScheduledExecutorService} and {@link EventBus} are a <b>hard requirements</b> and as such should be
      * provided.
      *
-     * @return a Builder to be able to create a {@link SimpleEventScheduler}
+     * @return a Builder to be able to create a {@code SimpleEventScheduler}
      */
     public static Builder builder() {
         return new Builder();
@@ -111,7 +113,7 @@ public class SimpleEventScheduler implements EventScheduler {
 
     @Override
     public void cancelSchedule(ScheduleToken scheduleToken) {
-        if (!SimpleScheduleToken.class.isInstance(scheduleToken)) {
+        if (!(scheduleToken instanceof SimpleScheduleToken)) {
             throw new IllegalArgumentException("The given ScheduleToken was not provided by this scheduler.");
         }
         Future<?> future = tokens.remove(((SimpleScheduleToken) scheduleToken).getTokenId());
@@ -120,59 +122,9 @@ public class SimpleEventScheduler implements EventScheduler {
         }
     }
 
-    /**
-     * {@inheritDoc}
-     * <p>
-     * Will shutdown in the {@link Phase#INBOUND_EVENT_CONNECTORS} phase.
-     */
     @Override
-    @ShutdownHandler(phase = Phase.INBOUND_EVENT_CONNECTORS)
     public void shutdown() {
         scheduledExecutorService.shutdown();
-    }
-
-    private class PublishEventTask implements Runnable {
-
-        private final Object event;
-        private final String tokenId;
-
-        public PublishEventTask(Object event, String tokenId) {
-            this.event = event;
-            this.tokenId = tokenId;
-        }
-
-        @SuppressWarnings("unchecked")
-        @Override
-        public void run() {
-            EventMessage<?> eventMessage = createMessage();
-            if (logger.isDebugEnabled()) {
-                logger.debug("Triggered the publication of event [{}]", eventMessage.getPayloadType().getSimpleName());
-            }
-            try {
-                UnitOfWork<EventMessage<?>> unitOfWork = new DefaultUnitOfWork<>(null);
-                unitOfWork.attachTransaction(transactionManager);
-                unitOfWork.execute(() -> eventBus.publish(eventMessage));
-            } finally {
-                tokens.remove(tokenId);
-            }
-        }
-
-        /**
-         * Creates a new message for the scheduled event. This ensures that a new identifier and timestamp will always
-         * be generated, so that the timestamp will reflect the actual moment the trigger occurred.
-         *
-         * @return the message to publish
-         */
-        private EventMessage<?> createMessage() {
-            EventMessage<?> eventMessage;
-            if (event instanceof EventMessage) {
-                eventMessage = new GenericEventMessage<>(((EventMessage) event).getPayload(),
-                                                         ((EventMessage) event).getMetaData());
-            } else {
-                eventMessage = new GenericEventMessage<>(event, MetaData.emptyInstance());
-            }
-            return eventMessage;
-        }
     }
 
     /**
@@ -187,6 +139,7 @@ public class SimpleEventScheduler implements EventScheduler {
         private ScheduledExecutorService scheduledExecutorService;
         private EventBus eventBus;
         private TransactionManager transactionManager = NoTransactionManager.INSTANCE;
+        private MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
         /**
          * Sets the {@link EventBus} used to publish events on to, once the schedule has been met.
@@ -203,8 +156,7 @@ public class SimpleEventScheduler implements EventScheduler {
         /**
          * Sets the {@link ScheduledExecutorService} used for scheduling and triggering events.
          *
-         * @param scheduledExecutorService a {@link ScheduledExecutorService} used for scheduling and triggering
-         *                                 events
+         * @param scheduledExecutorService a {@link ScheduledExecutorService} used for scheduling and triggering events
          * @return the current Builder instance, for fluent interfacing
          */
         public Builder scheduledExecutorService(ScheduledExecutorService scheduledExecutorService) {
@@ -228,6 +180,20 @@ public class SimpleEventScheduler implements EventScheduler {
         }
 
         /**
+         * Sets the {@link MessageTypeResolver} used to resolve the {@link QualifiedName} when scheduling
+         * {@link EventMessage EventMessages}. If not set, a {@link ClassBasedMessageTypeResolver} is used by default.
+         *
+         * @param messageTypeResolver The {@link MessageTypeResolver} used to provide the {@link QualifiedName} for
+         *                            {@link EventMessage EventMessages}.
+         * @return The current Builder instance, for fluent interfacing.
+         */
+        public Builder messageNameResolver(MessageTypeResolver messageTypeResolver) {
+            assertNonNull(messageTypeResolver, "MessageNameResolver may not be null");
+            this.messageTypeResolver = messageTypeResolver;
+            return this;
+        }
+
+        /**
          * Initializes a {@link SimpleEventScheduler} as specified through this Builder.
          *
          * @return a {@link SimpleEventScheduler} as specified through this Builder
@@ -246,6 +212,47 @@ public class SimpleEventScheduler implements EventScheduler {
             assertNonNull(eventBus, "The EventBus is a hard requirement and should be provided");
             assertNonNull(scheduledExecutorService,
                           "The ScheduledExecutorService is a hard requirement and should be provided");
+        }
+    }
+
+    private class PublishEventTask implements Runnable {
+
+        private final Object event;
+        private final String tokenId;
+
+        public PublishEventTask(Object event, String tokenId) {
+            this.event = event;
+            this.tokenId = tokenId;
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public void run() {
+            EventMessage<?> eventMessage = createMessage();
+            if (logger.isDebugEnabled()) {
+                logger.debug("Triggered the publication of event [{}]", eventMessage.getPayloadType().getSimpleName());
+            }
+            try {
+                LegacyUnitOfWork<EventMessage<?>> unitOfWork = new LegacyDefaultUnitOfWork<>(null);
+                unitOfWork.attachTransaction(transactionManager);
+                unitOfWork.execute((ctx) -> eventBus.publish(eventMessage));
+            } finally {
+                tokens.remove(tokenId);
+            }
+        }
+
+        /**
+         * Creates a new message for the scheduled event. This ensures that a new identifier and timestamp will always
+         * be generated, so that the timestamp will reflect the actual moment the trigger occurred.
+         *
+         * @return the message to publish
+         */
+        private EventMessage<?> createMessage() {
+            return event instanceof EventMessage
+                    ? new GenericEventMessage<>(((EventMessage<?>) event).type(),
+                                                ((EventMessage<?>) event).getPayload(),
+                                                ((EventMessage<?>) event).getMetaData())
+                    : new GenericEventMessage<>(messageTypeResolver.resolveOrThrow(event), event);
         }
     }
 }

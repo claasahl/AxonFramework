@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,6 @@ import org.axonframework.eventsourcing.EventSourcingHandler;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.modelling.command.AggregateLifecycle;
 
-import java.util.UUID;
-
 /**
  * @author Allard Buijze
  */
@@ -33,7 +31,10 @@ public class StubAggregate {
     private String identifier;
 
     public StubAggregate() {
-        identifier = UUID.randomUUID().toString();
+    }
+
+    public void setIdentifier(String identifier) {
+        this.identifier = identifier;
     }
 
     public StubAggregate(Object identifier) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 
 package org.axonframework.messaging;
 
+import jakarta.annotation.Nonnull;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+
 /**
  * Interface for a component that processes Messages.
  *
@@ -23,7 +26,7 @@ package org.axonframework.messaging;
  * @author Rene de Waele
  * @since 3.0
  */
-public interface MessageHandler<T extends Message<?>> {
+public interface MessageHandler<T extends Message<?>, R extends Message<?>> {
 
     /**
      * Handles the given {@code message}.
@@ -32,7 +35,24 @@ public interface MessageHandler<T extends Message<?>> {
      * @return The result of the message processing.
      * @throws Exception any exception that occurs during message handling
      */
-    Object handle(T message) throws Exception;
+    // TODO replace this operation for the new handle method
+    @Deprecated
+    Object handleSync(@Nonnull T message, @Nonnull ProcessingContext context) throws Exception;
+
+    /**
+     * Handles the given {@code message} and returns a {@link MessageStream} containing the result of the processing.
+     *
+     * @param message The message to be processed.
+     * @param context The {@code ProcessingContext} in which the reset is being prepared.
+     * @return A {@link MessageStream} containing the result of the message processing.
+     */
+    default MessageStream<R> handle(@Nonnull T message, @Nonnull ProcessingContext context) {
+        try {
+            return MessageStream.just((R) GenericResultMessage.asResultMessage(handleSync(message, context)));
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
 
     /**
      * Indicates whether this handler can handle the given message
@@ -40,7 +60,8 @@ public interface MessageHandler<T extends Message<?>> {
      * @param message The message to verify
      * @return {@code true} if this handler can handle the message, otherwise {@code false}
      */
-    default boolean canHandle(T message) {
+    @Deprecated
+    default boolean canHandle(@Nonnull T message, @Nonnull ProcessingContext context) {
         return true;
     }
 
@@ -49,6 +70,7 @@ public interface MessageHandler<T extends Message<?>> {
      *
      * @return Returns the instance type that this handler delegates to
      */
+    @Deprecated
     default Class<?> getTargetType() {
         return getClass();
     }
@@ -59,6 +81,7 @@ public interface MessageHandler<T extends Message<?>> {
      * @param payloadType The payloadType to verify
      * @return {@code true} if this handler can handle the payloadType, otherwise {@code false}
      */
+    @Deprecated
     default boolean canHandleType(Class<?> payloadType) {
         return true;
     }

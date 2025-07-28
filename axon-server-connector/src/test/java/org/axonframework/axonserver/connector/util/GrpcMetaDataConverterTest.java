@@ -1,10 +1,26 @@
+/*
+ * Copyright (c) 2010-2025. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.axonframework.axonserver.connector.util;
 
 import io.axoniq.axonserver.grpc.MetaDataValue;
 import io.axoniq.axonserver.grpc.SerializedObject;
+import org.axonframework.axonserver.connector.utils.TestSerializer;
 import org.axonframework.serialization.Revision;
 import org.axonframework.serialization.Serializer;
-import org.axonframework.serialization.xml.XStreamSerializer;
 import org.junit.jupiter.api.*;
 
 import java.util.Objects;
@@ -21,11 +37,11 @@ import static org.mockito.Mockito.*;
  */
 class GrpcMetaDataConverterTest {
 
-    private final Serializer serializer = spy(XStreamSerializer.defaultSerializer());
+    private final Serializer serializer = spy(TestSerializer.xStreamSerializer());
     private final GrpcMetaDataConverter testSubject = new GrpcMetaDataConverter(serializer);
 
     @Test
-    void testConvertStringToMetaDataValue() {
+    void convertStringToMetaDataValue() {
         String testValue = "some-text";
 
         MetaDataValue result = testSubject.convertToMetaDataValue(testValue);
@@ -34,7 +50,7 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertDoubleToMetaDataValue() {
+    void convertDoubleToMetaDataValue() {
         double testValue = 10d;
 
         MetaDataValue result = testSubject.convertToMetaDataValue(testValue);
@@ -43,7 +59,7 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertFloatToMetaDataValue() {
+    void convertFloatToMetaDataValue() {
         float testValue = 10f;
 
         MetaDataValue result = testSubject.convertToMetaDataValue(testValue);
@@ -52,7 +68,7 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertIntegerToMetaDataValue() {
+    void convertIntegerToMetaDataValue() {
         int testValue = 10;
 
         MetaDataValue result = testSubject.convertToMetaDataValue(testValue);
@@ -61,7 +77,7 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertLongToMetaDataValue() {
+    void convertLongToMetaDataValue() {
         long testValue = 10L;
 
         MetaDataValue result = testSubject.convertToMetaDataValue(testValue);
@@ -70,14 +86,14 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertBooleanToMetaDataValue() {
+    void convertBooleanToMetaDataValue() {
         MetaDataValue result = testSubject.convertToMetaDataValue(true);
 
         assertTrue(result.getBooleanValue());
     }
 
     @Test
-    void testConvertObjectToMetaDataValueUsesSerializer() {
+    void convertObjectToMetaDataValueUsesSerializer() {
         TestObject testObject = new TestObject("some-text");
 
         MetaDataValue result = testSubject.convertToMetaDataValue(testObject);
@@ -91,7 +107,7 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertObjectWithRevisionToMetaDataValue() {
+    void convertObjectWithRevisionToMetaDataValue() {
         RevisionTestObject testObject = new RevisionTestObject("some-text");
 
         MetaDataValue result = testSubject.convertToMetaDataValue(testObject);
@@ -105,7 +121,7 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertNullToMetaDataValue() {
+    void convertNullToMetaDataValue() {
         MetaDataValue result = testSubject.convertToMetaDataValue(null);
 
         verify(serializer).serialize(null, byte[].class);
@@ -114,7 +130,7 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertFromTextMetaDataValue() {
+    void convertFromTextMetaDataValue() {
         String expected = "some-text";
         MetaDataValue testMetaData = MetaDataValue.newBuilder()
                                                   .setTextValue(expected)
@@ -128,69 +144,60 @@ class GrpcMetaDataConverterTest {
     }
 
     @Test
-    void testConvertFromBytesMetaDataValue() {
+    void convertFromBytesMetaDataValue() {
         TestObject testObject = new TestObject("some-text");
         MetaDataValue testMetaData = testSubject.convertToMetaDataValue(testObject);
 
-        Object resultObject = testSubject.convertFromMetaDataValue(testMetaData);
+        String result = testSubject.convertFromMetaDataValue(testMetaData);
 
         verify(serializer).deserialize(isA(GrpcSerializedObject.class));
-        assertTrue(resultObject instanceof TestObject);
-        assertEquals(testObject, resultObject);
+        assertEquals(testObject.toString(), result);
     }
 
     @Test
-    void testConvertFromBytesMetaDataValueOfTypeEmptyReturnsNull() {
+    void convertFromBytesMetaDataValueOfTypeEmptyReturnsNull() {
         MetaDataValue testMetaData = testSubject.convertToMetaDataValue(null);
 
         assertNull(testSubject.convertFromMetaDataValue(testMetaData));
     }
 
     @Test
-    void testConvertFromDoubleMetaDataValue() {
-        @SuppressWarnings("WrapperTypeMayBePrimitive")
-        Double expected = 10d;
+    void convertFromDoubleMetaDataValue() {
+        double expected = 10d;
         MetaDataValue testMetaData = MetaDataValue.newBuilder()
                                                   .setDoubleValue(expected)
                                                   .build();
 
-        Object resultObject = testSubject.convertFromMetaDataValue(testMetaData);
+        String result = testSubject.convertFromMetaDataValue(testMetaData);
 
-        assertTrue(resultObject instanceof Double);
-        Double result = (Double) resultObject;
-        assertEquals(expected, result);
+        assertEquals(Double.toString(expected), result);
     }
 
     @Test
-    void testConvertFromNumberMetaDataValue() {
-        @SuppressWarnings("WrapperTypeMayBePrimitive")
-        Long expected = 10L;
+    void convertFromNumberMetaDataValue() {
+        long expected = 10L;
         MetaDataValue testMetaData = MetaDataValue.newBuilder()
                                                   .setNumberValue(expected)
                                                   .build();
 
-        Object resultObject = testSubject.convertFromMetaDataValue(testMetaData);
+        String result = testSubject.convertFromMetaDataValue(testMetaData);
 
-        assertTrue(resultObject instanceof Long);
-        Long result = (Long) resultObject;
-        assertEquals(expected, result);
+        assertEquals(Long.toString(expected), result);
     }
 
     @Test
-    void testConvertFromBooleanMetaDataValue() {
+    void convertFromBooleanMetaDataValue() {
         MetaDataValue testMetaData = MetaDataValue.newBuilder()
                                                   .setBooleanValue(true)
                                                   .build();
 
-        Object resultObject = testSubject.convertFromMetaDataValue(testMetaData);
+        String result = testSubject.convertFromMetaDataValue(testMetaData);
 
-        assertTrue(resultObject instanceof Boolean);
-        Boolean result = (Boolean) resultObject;
-        assertTrue(result);
+        assertEquals("true", result);
     }
 
     @Test
-    void testConvertFromDataNotSetMetaDataValue() {
+    void convertFromDataNotSetMetaDataValue() {
         MetaDataValue testMetaData = MetaDataValue.getDefaultInstance();
 
         assertNull(testSubject.convertFromMetaDataValue(testMetaData));

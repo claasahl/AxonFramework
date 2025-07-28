@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,13 +45,13 @@ class CurrentUnitOfWorkTest {
     }
 
     @Test
-    void testGetSession_NoCurrentSession() {
+    void getSession_NoCurrentSession() {
         assertThrows(IllegalStateException.class, CurrentUnitOfWork::get);
     }
 
     @Test
-    void testSetSession() {
-        UnitOfWork<?> mockUnitOfWork = mock(UnitOfWork.class);
+    void setSession() {
+        LegacyUnitOfWork<?> mockUnitOfWork = mock(LegacyUnitOfWork.class);
         CurrentUnitOfWork.set(mockUnitOfWork);
         assertSame(mockUnitOfWork, CurrentUnitOfWork.get());
 
@@ -60,10 +60,10 @@ class CurrentUnitOfWorkTest {
     }
 
     @Test
-    void testNotCurrentUnitOfWorkCommitted() {
-        DefaultUnitOfWork<?> outerUoW = new DefaultUnitOfWork<>(null);
+    void notCurrentUnitOfWorkCommitted() {
+        LegacyDefaultUnitOfWork<?> outerUoW = new LegacyDefaultUnitOfWork<>(null);
         outerUoW.start();
-        new DefaultUnitOfWork<>(null).start();
+        new LegacyDefaultUnitOfWork<>(null).start();
         try {
             outerUoW.commit();
         } catch (IllegalStateException e) {

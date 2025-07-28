@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,13 @@ import org.axonframework.eventhandling.EventData;
 import org.axonframework.serialization.SerializedType;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.SimpleSerializedType;
+import org.axonframework.serialization.TestSerializer;
 import org.axonframework.serialization.xml.XStreamSerializer;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.*;
+import org.junit.jupiter.params.provider.*;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -36,39 +41,48 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class EventTypeUpcasterTest {
 
-    public static final String EXPECTED_PAYLOAD_TYPE = "expected-payload-type";
+    public static final String EXPECTED_PAYLOAD_TYPE = TestEvent.class.getName();
     public static final String EXPECTED_REVISION = "1";
-    public static final String UPCASTED_PAYLOAD_TYPE = "upcasted-payload-type";
+    public static final String UPCASTED_PAYLOAD_TYPE = RenamedTestEvent.class.getName();
     public static final String UPCASTED_REVISION = "2";
+
+    private static final String SOURCE_METHOD_NAME = "provideSerializers";
+
+    @SuppressWarnings("unused") // Used by all parameterized tests
+    private static Stream<Arguments> provideSerializers() {
+        return Stream.of(
+                Arguments.of(TestSerializer.XSTREAM.getSerializer()),
+                Arguments.of(TestSerializer.JACKSON.getSerializer()),
+                Arguments.of(TestSerializer.JACKSON_ONLY_ACCEPT_CONSTRUCTOR_PARAMETERS.getSerializer())
+        );
+    }
 
     private final EventTypeUpcaster testSubject =
             new EventTypeUpcaster(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION, UPCASTED_PAYLOAD_TYPE, UPCASTED_REVISION);
 
-    private final Serializer serializer = XStreamSerializer.defaultSerializer();
-
     @Test
-    void testUpcasterBuilderFailsForNullExpectedPayloadTypeClass() {
+    void upcasterBuilderFailsForNullExpectedPayloadTypeClass() {
         assertThrows(
                 AxonConfigurationException.class, () -> EventTypeUpcaster.from((Class<?>) null, EXPECTED_REVISION)
         );
     }
 
     @Test
-    void testUpcasterBuilderFailsForNullExpectedPayloadType() {
+    void upcasterBuilderFailsForNullExpectedPayloadType() {
         assertThrows(
                 AxonConfigurationException.class, () -> EventTypeUpcaster.from((String) null, EXPECTED_REVISION)
         );
     }
 
     @Test
-    void testUpcasterBuilderFailsForEmptyExpectedPayloadType() {
+    void upcasterBuilderFailsForEmptyExpectedPayloadType() {
         assertThrows(
                 AxonConfigurationException.class, () -> EventTypeUpcaster.from("", EXPECTED_REVISION)
         );
     }
 
     @Test
-    void testUpcasterBuilderFailsForNullUpcastedPayloadTypeClass() {
+    void upcasterBuilderFailsForNullUpcastedPayloadTypeClass() {
         EventTypeUpcaster.Builder testSubject = EventTypeUpcaster.from(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION);
         assertThrows(
                 AxonConfigurationException.class, () -> testSubject.to((Class<?>) null, UPCASTED_REVISION)
@@ -76,7 +90,7 @@ class EventTypeUpcasterTest {
     }
 
     @Test
-    void testUpcasterBuilderFailsForNullUpcastedPayloadType() {
+    void upcasterBuilderFailsForNullUpcastedPayloadType() {
         EventTypeUpcaster.Builder testSubject = EventTypeUpcaster.from(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION);
         assertThrows(
                 AxonConfigurationException.class, () -> testSubject.to((String) null, UPCASTED_REVISION)
@@ -84,52 +98,58 @@ class EventTypeUpcasterTest {
     }
 
     @Test
-    void testUpcasterBuilderFailsForEmptyUpcastedPayloadType() {
+    void upcasterBuilderFailsForEmptyUpcastedPayloadType() {
         EventTypeUpcaster.Builder testSubject = EventTypeUpcaster.from(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION);
         assertThrows(
                 AxonConfigurationException.class, () -> testSubject.to("", UPCASTED_REVISION)
         );
     }
 
-    @Test
-    void testCanUpcastReturnsTrueForMatchingPayloadTypeAndRevision() {
-        EventData<?> testEventData = new TestEventEntry(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION);
+    @ParameterizedTest
+    @MethodSource(SOURCE_METHOD_NAME)
+    void canUpcastReturnsTrueForMatchingPayloadTypeAndRevision(Serializer serializer) {
+        EventData<?> testEventData = new TestEventEntry(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION, serializer);
         IntermediateEventRepresentation testRepresentation = new InitialEventRepresentation(testEventData, serializer);
 
         assertTrue(testSubject.canUpcast(testRepresentation));
     }
 
-    @Test
-    void testCanUpcastReturnsFalseForIncorrectPayloadType() {
-        EventData<?> testEventData = new TestEventEntry("some-non-matching-payload-type", EXPECTED_REVISION);
+    @ParameterizedTest
+    @MethodSource(SOURCE_METHOD_NAME)
+    void canUpcastReturnsFalseForIncorrectPayloadType(Serializer serializer) {
+        EventData<?> testEventData =
+                new TestEventEntry("some-non-matching-payload-type", EXPECTED_REVISION, serializer);
+        IntermediateEventRepresentation testRepresentation = new InitialEventRepresentation(testEventData, serializer);
+
+        assertFalse(testSubject.canUpcast(testRepresentation));
+    }
+
+    @ParameterizedTest
+    @MethodSource(SOURCE_METHOD_NAME)
+    void canUpcastReturnsFalseForIncorrectRevision(Serializer serializer) {
+        EventData<?> testEventData =
+                new TestEventEntry(EXPECTED_PAYLOAD_TYPE, "some-non-matching-revision", serializer);
         IntermediateEventRepresentation testRepresentation = new InitialEventRepresentation(testEventData, serializer);
 
         assertFalse(testSubject.canUpcast(testRepresentation));
     }
 
     @Test
-    void testCanUpcastReturnsFalseForIncorrectRevision() {
-        EventData<?> testEventData = new TestEventEntry(EXPECTED_PAYLOAD_TYPE, "some-non-matching-revision");
-        IntermediateEventRepresentation testRepresentation = new InitialEventRepresentation(testEventData, serializer);
-
-        assertFalse(testSubject.canUpcast(testRepresentation));
-    }
-
-    @Test
-    void testIsExpectedPayloadType() {
+    void isExpectedPayloadType() {
         assertTrue(testSubject.isExpectedPayloadType(EXPECTED_PAYLOAD_TYPE));
         assertFalse(testSubject.isExpectedPayloadType(UPCASTED_PAYLOAD_TYPE));
     }
 
     @Test
-    void testIsExpectedRevision() {
+    void isExpectedRevision() {
         assertTrue(testSubject.isExpectedRevision(EXPECTED_REVISION));
         assertFalse(testSubject.isExpectedRevision(UPCASTED_REVISION));
     }
 
-    @Test
-    void testDoUpcast() {
-        EventData<?> testEventData = new TestEventEntry(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION);
+    @ParameterizedTest
+    @MethodSource(SOURCE_METHOD_NAME)
+    void doUpcast(Serializer serializer) {
+        EventData<?> testEventData = new TestEventEntry(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION, serializer);
         InitialEventRepresentation testRepresentation = new InitialEventRepresentation(testEventData, serializer);
 
         IntermediateEventRepresentation result = testSubject.doUpcast(testRepresentation);
@@ -138,8 +158,27 @@ class EventTypeUpcasterTest {
         assertEquals(UPCASTED_REVISION, resultType.getRevision());
     }
 
+    @ParameterizedTest
+    @MethodSource(SOURCE_METHOD_NAME)
+    void shouldDeserializeToNewType(Serializer serializer) {
+        // If we're dealing with an XStreamSerializer the FQCN in the XML tags defines the type.
+        // Due to this, it's more reasonable to use type aliases on the XStream instance i.o. using this upcaster.
+        if (serializer instanceof XStreamSerializer) {
+            return;
+        }
+
+        final EventData<?> testEventData = new TestEventEntry(EXPECTED_PAYLOAD_TYPE, EXPECTED_REVISION, serializer);
+        final InitialEventRepresentation testRepresentation = new InitialEventRepresentation(testEventData, serializer);
+
+        final IntermediateEventRepresentation result = testSubject.doUpcast(testRepresentation);
+
+        Object deserialize = serializer.deserialize(result.getData());
+
+        assertEquals(RenamedTestEvent.class, deserialize.getClass());
+    }
+
     @Test
-    void testUpcastedType() {
+    void upcastedType() {
         SerializedType expectedType = new SimpleSerializedType(UPCASTED_PAYLOAD_TYPE, UPCASTED_REVISION);
         assertEquals(expectedType, testSubject.upcastedType());
     }
@@ -148,10 +187,63 @@ class EventTypeUpcasterTest {
      * Test {@link AbstractEventEntry} implementation which only allows adjusting the {@code payloadType} and {@code
      * payloadRevision}. All other {@code AbstractEventEntry} parameters are defaulted.
      */
-    private static class TestEventEntry extends AbstractEventEntry<String> {
+    private static class TestEventEntry extends AbstractEventEntry<byte[]> {
 
-        public TestEventEntry(String payloadType, String payloadRevision) {
-            super("eventIdentifier", "timestamp", payloadType, payloadRevision, "payload", "metaData");
+        private static final TestEvent PAYLOAD = new TestEvent("payload");
+        private static final TestEvent META_DATA = new TestEvent("metadata");
+
+        public TestEventEntry(String payloadType, String payloadRevision, Serializer serializer) {
+            super("eventIdentifier", "timestamp", payloadType, payloadRevision,
+                  serializer.serialize(PAYLOAD, byte[].class).getData(),
+                  serializer.serialize(META_DATA, byte[].class).getData());
+        }
+    }
+
+    /**
+     * A simple event used for testing.
+     */
+    @SuppressWarnings("unused")
+    private static class TestEvent {
+
+        private String testField;
+
+        public TestEvent() {
+        }
+
+        public TestEvent(String testField) {
+            this.testField = testField;
+        }
+
+        public String getTestField() {
+            return testField;
+        }
+
+        public void setTestField(String testField) {
+            this.testField = testField;
+        }
+    }
+
+    /**
+     * Latest revision of {@code TestEvent} (renamed event type).
+     */
+    @SuppressWarnings("unused")
+    private static class RenamedTestEvent {
+
+        private String testField;
+
+        public RenamedTestEvent() {
+        }
+
+        public RenamedTestEvent(String testField) {
+            this.testField = testField;
+        }
+
+        public String getTestField() {
+            return testField;
+        }
+
+        public void setTestField(String testField) {
+            this.testField = testField;
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,30 @@
 
 package org.axonframework.deadline;
 
+import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.Registration;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.GenericMessage;
+import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageDispatchInterceptor;
 import org.axonframework.messaging.MessageHandlerInterceptor;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.MessageTypeResolver;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.UnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import jakarta.annotation.Nonnull;
 
 /**
  * Abstract implementation of the {@link DeadlineManager} to be implemented by concrete solutions for the
- * DeadlineManager. Provides functionality to perform a call to the DeadlineManager in the a {@link UnitOfWork} it's
- * 'prepare commit' phase. This #runOnPrepareCommitOrNow(Runnable) functionality is required, as the DeadlineManager
- * schedules a Message which needs to happen on order with the other messages published throughout the system.
+ * DeadlineManager. Provides functionality to perform a call to the DeadlineManager in the a {@link LegacyUnitOfWork}
+ * it's 'prepare commit' phase. This #runOnPrepareCommitOrNow(Runnable) functionality is required, as the
+ * DeadlineManager schedules a Message which needs to happen on order with the other messages published throughout the
+ * system.
  *
  * @author Steven van Beelen
  * @since 3.3
@@ -39,13 +48,15 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
 
     private final List<MessageDispatchInterceptor<? super DeadlineMessage<?>>> dispatchInterceptors = new CopyOnWriteArrayList<>();
     private final List<MessageHandlerInterceptor<? super DeadlineMessage<?>>> handlerInterceptors = new CopyOnWriteArrayList<>();
+    protected MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
     /**
-     * Run a given {@code deadlineCall} immediately, or schedule it for the {@link UnitOfWork} it's 'prepare commit'
-     * phase if a UnitOfWork is active. This is required as the DeadlineManager schedule message which we want to happen
-     * on order with other message being handled.
+     * Run a given {@code deadlineCall} immediately, or schedule it for the {@link LegacyUnitOfWork} it's 'prepare
+     * commit' phase if a UnitOfWork is active. This is required as the DeadlineManager schedule message which we want
+     * to happen on order with other message being handled.
      *
-     * @param deadlineCall a {@link Runnable} to be executed now or on prepare commit if a {@link UnitOfWork} is active
+     * @param deadlineCall a {@link Runnable} to be executed now or on prepare commit if a {@link LegacyUnitOfWork} is
+     *                     active
      */
     protected void runOnPrepareCommitOrNow(Runnable deadlineCall) {
         if (CurrentUnitOfWork.isStarted()) {
@@ -57,14 +68,14 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
 
     @Override
     public Registration registerDispatchInterceptor(
-            MessageDispatchInterceptor<? super DeadlineMessage<?>> dispatchInterceptor) {
+            @Nonnull MessageDispatchInterceptor<? super DeadlineMessage<?>> dispatchInterceptor) {
         dispatchInterceptors.add(dispatchInterceptor);
         return () -> dispatchInterceptors.remove(dispatchInterceptor);
     }
 
     @Override
     public Registration registerHandlerInterceptor(
-            MessageHandlerInterceptor<? super DeadlineMessage<?>> handlerInterceptor) {
+            @Nonnull MessageHandlerInterceptor<? super DeadlineMessage<?>> handlerInterceptor) {
         handlerInterceptors.add(handlerInterceptor);
         return () -> handlerInterceptors.remove(handlerInterceptor);
     }
@@ -80,8 +91,8 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
     }
 
     /**
-     * Provides a list of registered handler interceptors. Do note that this list is not modifiable, and that changes
-     * in the internal structure for handler interceptors will be reflected in this list.
+     * Provides a list of registered handler interceptors. Do note that this list is not modifiable, and that changes in
+     * the internal structure for handler interceptors will be reflected in this list.
      *
      * @return a list of handler interceptors
      */
@@ -103,5 +114,33 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
             intercepted = (DeadlineMessage<T>) interceptor.handle(intercepted);
         }
         return intercepted;
+    }
+
+    /**
+     * Returns the given {@code deadlineName} and {@code messageOrPayload} as a DeadlineMessage which expires at the
+     * given {@code expiryTime}. If the {@code messageOrPayload} parameter is of type {@link Message}, a new
+     * {@code DeadlineMessage} instance will be created using the payload and meta data of the given message. Otherwise,
+     * the given {@code messageOrPayload} is wrapped into a {@code GenericDeadlineMessage} as its payload.
+     *
+     * @param deadlineName     The name for this {@link DeadlineMessage}.
+     * @param messageOrPayload A {@link Message} or payload to wrap as a DeadlineMessage
+     * @param expiryTime       The timestamp at which the deadline expires
+     * @param <P>              The generic type of the expected payload of the resulting object
+     * @return a DeadlineMessage using the {@code deadlineName} as its deadline qualifiedName and containing the given
+     * {@code messageOrPayload} as the payload
+     */
+    @SuppressWarnings("unchecked")
+    protected <P> DeadlineMessage<P> asDeadlineMessage(@Nonnull String deadlineName,
+                                                       Object messageOrPayload,
+                                                       @Nonnull Instant expiryTime) {
+        if (messageOrPayload instanceof Message) {
+            return new GenericDeadlineMessage<>(deadlineName,
+                                                (Message<P>) messageOrPayload,
+                                                () -> expiryTime);
+        }
+        MessageType type = messageTypeResolver.resolveOrThrow(ObjectUtils.nullSafeTypeOf(messageOrPayload));
+        return new GenericDeadlineMessage<>(
+                deadlineName, new GenericMessage<>(type, (P) messageOrPayload), () -> expiryTime
+        );
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,56 +17,71 @@
 package org.axonframework.eventhandling;
 
 import org.axonframework.commandhandling.GenericCommandMessage;
-import org.axonframework.messaging.unitofwork.BatchingUnitOfWork;
-import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.LegacyBatchingUnitOfWork;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Method;
 import java.util.List;
 
+import static org.axonframework.eventhandling.DomainEventTestUtils.createDomainEvents;
+import static org.axonframework.eventhandling.EventTestUtils.asEventMessage;
+import static org.axonframework.messaging.unitofwork.StubProcessingContext.forMessage;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.axonframework.utils.EventTestUtils.createEvents;
-import static org.axonframework.eventhandling.GenericEventMessage.asEventMessage;
 
 class ConcludesBatchParameterResolverFactoryTest {
 
-    private ConcludesBatchParameterResolverFactory subject = new ConcludesBatchParameterResolverFactory();
+    private final ConcludesBatchParameterResolverFactory testSubject = new ConcludesBatchParameterResolverFactory();
 
     @Test
-    void testCreateInstance() throws Exception {
+    void createInstance() throws Exception {
         Method method = getClass().getDeclaredMethod("handle", String.class, Boolean.class);
-        assertSame(subject.getResolver(), subject.createInstance(method, method.getParameters(), 1));
+        assertSame(testSubject.getResolver(), testSubject.createInstance(method, method.getParameters(), 1));
         method = getClass().getDeclaredMethod("handlePrimitive", String.class, boolean.class);
-        assertSame(subject.getResolver(), subject.createInstance(method, method.getParameters(), 1));
+        assertSame(testSubject.getResolver(), testSubject.createInstance(method, method.getParameters(), 1));
     }
 
     @Test
-    void testOnlyMatchesEventMessages() {
-        assertTrue(subject.matches(asEventMessage("testEvent")));
-        assertFalse(subject.matches(new GenericCommandMessage<>("testCommand")));
+    void onlyMatchesEventMessages() {
+        assertTrue(testSubject.matches(forMessage(asEventMessage("testEvent"))));
+        assertFalse(testSubject.matches(forMessage(new GenericCommandMessage<>(
+                new MessageType("command"), "testCommand")
+        )));
     }
 
     @Test
-    void testResolvesToTrueWithoutUnitOfWork() {
-        assertTrue(subject.resolveParameterValue(asEventMessage("testEvent")));
+    void resolvesToTrueWithoutUnitOfWork() {
+        assertEquals(true,
+                     testSubject.resolveParameterValue(forMessage(asEventMessage("testEvent"))));
     }
 
     @Test
-    void testResolvesToTrueWithRegularUnitOfWork() {
+    void resolvesToTrueWithRegularUnitOfWork() {
         EventMessage<?> event = asEventMessage("testEvent");
-        DefaultUnitOfWork.startAndGet(event).execute(() -> assertTrue(subject.resolveParameterValue(event)));
+        LegacyDefaultUnitOfWork.startAndGet(event)
+                               .execute((ctx) -> assertEquals(Boolean.TRUE, testSubject.resolveParameterValue(ctx)));
     }
 
     @Test
-    void testResolvesToFalseWithBatchingUnitOfWorkIfMessageIsNotLast() {
-        List<? extends EventMessage<?>> events = createEvents(5);
-        new BatchingUnitOfWork<>(events).execute(() -> assertFalse(subject.resolveParameterValue(events.get(0))));
+    void resolvesToFalseWithBatchingUnitOfWorkIfMessageIsNotLast() {
+        List<? extends EventMessage<?>> events = createDomainEvents(5);
+        new LegacyBatchingUnitOfWork<>(events)
+                .execute((ctx) -> {
+                    ProcessingContext event0Context = forMessage(events.get(0));
+                    assertFalse(testSubject.resolveParameterValue(event0Context));
+                });
     }
 
     @Test
-    void testResolvesToFalseWithBatchingUnitOfWorkIfMessageIsLast() {
-        List<? extends EventMessage<?>> events = createEvents(5);
-        new BatchingUnitOfWork<>(events).execute(() -> assertTrue(subject.resolveParameterValue(events.get(4))));
+    void resolvesToTrueWithBatchingUnitOfWorkIfMessageIsLast() {
+        List<? extends EventMessage<?>> events = createDomainEvents(5);
+        new LegacyBatchingUnitOfWork<>(events)
+                .execute((ctx) -> {
+                    ProcessingContext lastEventContext = forMessage(events.get(4));
+                    assertTrue(testSubject.resolveParameterValue(lastEventContext));
+                });
     }
 
     @SuppressWarnings("unused")
@@ -76,5 +91,4 @@ class ConcludesBatchParameterResolverFactoryTest {
     @SuppressWarnings("unused")
     private void handlePrimitive(String eventPayload, @ConcludesBatch boolean concludesBatch) {
     }
-
 }

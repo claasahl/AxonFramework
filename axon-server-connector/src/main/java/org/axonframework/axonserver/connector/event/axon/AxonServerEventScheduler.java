@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,17 +27,14 @@ import org.axonframework.axonserver.connector.util.GrpcMetaDataConverter;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.IdentifierFactory;
+import org.axonframework.common.StringUtils;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.scheduling.EventScheduler;
 import org.axonframework.eventhandling.scheduling.ScheduleToken;
 import org.axonframework.eventhandling.scheduling.java.SimpleScheduleToken;
-import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
-import org.axonframework.lifecycle.StartHandler;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.serialization.SerializedObject;
 import org.axonframework.serialization.Serializer;
-import org.axonframework.serialization.xml.XStreamSerializer;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -47,6 +44,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
+import static org.axonframework.common.BuilderUtils.assertNonEmpty;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.common.ObjectUtils.getOrDefault;
 
@@ -62,42 +60,44 @@ public class AxonServerEventScheduler implements EventScheduler {
     private final Serializer serializer;
     private final AxonServerConnectionManager axonServerConnectionManager;
     private final GrpcMetaDataConverter converter;
+    private final String context;
 
     private final AtomicBoolean started = new AtomicBoolean();
 
     /**
-     * Instantiate a Builder to be able to create a {@link AxonServerEventScheduler}.
+     * Instantiate a Builder to be able to create a {@code AxonServerEventScheduler}.
      * <p>
-     * The {@code requestTimeout} is defaulted to {@code 15000} millis and the {@link Serializer} to a {@link
-     * XStreamSerializer}. The {@link AxonServerConnectionManager} is a <b>hard requirement</b> and as such should be
+     * The {@code requestTimeout} is defaulted to {@code 15000} millis.
+     * <p>
+     * The {@link Serializer} and {@link AxonServerConnectionManager} are <b>hard requirements</b> and as such should be
      * provided.
      *
-     * @return a Builder to be able to create a {@link AxonServerEventScheduler}
+     * @return a Builder to be able to create a {@code AxonServerEventScheduler}
      */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Instantiates an {@link AxonServerEventScheduler} using the given {@link Builder}.
+     * Instantiates an {@code AxonServerEventScheduler} using the given {@link Builder}.
      * <p>
-     * Will assert that the {@link AxonServerConnectionManager} is not {@code null} and will throw an {@link
-     * AxonConfigurationException} if this is the case.
+     * Will assert that the {@link Serializer} and {@link AxonServerConnectionManager} are not {@code null} and will
+     * throw an {@link AxonConfigurationException} if this is the case.
      *
      * @param builder the {@link Builder} used.
      */
     protected AxonServerEventScheduler(Builder builder) {
         builder.validate();
         this.requestTimeout = builder.requestTimeout;
-        this.serializer = builder.eventSerializer.get();
+        this.serializer = builder.serializer.get();
         this.axonServerConnectionManager = builder.axonServerConnectionManager;
+        this.context = builder.defaultContext;
         this.converter = new GrpcMetaDataConverter(serializer);
     }
 
     /**
      * Start the Axon Server {@link EventScheduler} implementation.
      */
-    @StartHandler(phase = Phase.OUTBOUND_EVENT_CONNECTORS)
     public void start() {
         started.set(true);
     }
@@ -105,7 +105,6 @@ public class AxonServerEventScheduler implements EventScheduler {
     /**
      * Shuts down the Axon Server {@link EventScheduler} implementation.
      */
-    @ShutdownHandler(phase = Phase.OUTBOUND_EVENT_CONNECTORS)
     public void shutdownDispatching() {
         started.set(false);
     }
@@ -206,7 +205,8 @@ public class AxonServerEventScheduler implements EventScheduler {
     }
 
     private EventChannel eventChannel() {
-        return axonServerConnectionManager.getConnection().eventChannel();
+        return StringUtils.nonEmptyOrNull(context) ? axonServerConnectionManager.getConnection(context).eventChannel()
+                : axonServerConnectionManager.getConnection().eventChannel();
     }
 
     private Event toEvent(Object event) {
@@ -242,15 +242,17 @@ public class AxonServerEventScheduler implements EventScheduler {
     /**
      * Builder class to instantiate an {@link AxonServerEventScheduler}.
      * <p>
-     * The {@code requestTimeout} is defaulted to {@code 15000} millis and the {@link Serializer} to a {@link
-     * XStreamSerializer}. The {@link AxonServerConnectionManager} is a <b>hard requirement</b> and as such should be
+     * The {@code requestTimeout} is defaulted to {@code 15000} millis.
+     * <p>
+     * The {@link Serializer} and {@link AxonServerConnectionManager} are <b>hard requirements</b> and as such should be
      * provided.
      */
     public static class Builder {
 
         private long requestTimeout = 15000;
-        private Supplier<Serializer> eventSerializer = XStreamSerializer::defaultSerializer;
+        private Supplier<Serializer> serializer;
         private AxonServerConnectionManager axonServerConnectionManager;
+        private String defaultContext;
 
         /**
          * Sets the timeout in which a confirmation of the scheduling interaction is expected. Defaults to 15 seconds.
@@ -271,7 +273,8 @@ public class AxonServerEventScheduler implements EventScheduler {
          * @return the current Builder instance, for fluent interfacing
          */
         public Builder eventSerializer(Serializer eventSerializer) {
-            this.eventSerializer = () -> eventSerializer;
+            assertNonNull(eventSerializer, "The event Serializer may not be null");
+            this.serializer = () -> eventSerializer;
             return this;
         }
 
@@ -290,6 +293,18 @@ public class AxonServerEventScheduler implements EventScheduler {
         }
 
         /**
+         * Sets the default context for this event scheduler to connect to.
+         *
+         * @param defaultContext for this scheduler to connect to.
+         * @return the current Builder instance, for fluent interfacing
+         */
+        public Builder defaultContext(String defaultContext) {
+            assertNonEmpty(defaultContext, "The context may not be null or empty");
+            this.defaultContext = defaultContext;
+            return this;
+        }
+
+        /**
          * Initializes a {@link AxonServerEventScheduler} as specified through this Builder.
          *
          * @return a {@link AxonServerEventScheduler} as specified through this Builder
@@ -299,6 +314,7 @@ public class AxonServerEventScheduler implements EventScheduler {
         }
 
         protected void validate() throws AxonConfigurationException {
+            assertNonNull(serializer, "The Serializer is a hard requirement and should be provided");
             assertNonNull(axonServerConnectionManager,
                           "The AxonServerConnectionManager is a hard requirement and should be provided");
         }

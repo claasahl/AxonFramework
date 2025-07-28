@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,29 +19,50 @@ package org.axonframework.serialization.json;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.axonframework.common.io.IOUtils;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
+ * Test class validating the {@link JsonNodeToByteArrayConverter}.
+ *
  * @author Allard Buijze
  */
 class JsonNodeToByteArrayConverterTest {
 
-    private JsonNodeToByteArrayConverter testSubject;
     private ObjectMapper objectMapper;
+
+    private JsonNodeToByteArrayConverter testSubject;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+
         testSubject = new JsonNodeToByteArrayConverter(objectMapper);
     }
 
     @Test
-    void testConvertNodeToBytes() throws Exception {
+    void throwsNullPointerExceptionWhenConstructingWithNullObjectMapper() {
+        //noinspection DataFlowIssue
+        assertThrows(NullPointerException.class, () -> new JsonNodeToByteArrayConverter(null));
+    }
+
+    @Test
+    void validateSourceAndTargetType() {
+        assertEquals(JsonNode.class, testSubject.expectedSourceType());
+        assertEquals(byte[].class, testSubject.targetType());
+    }
+
+    @Test
+    void convertNodeToBytes() throws Exception {
         final String content = "{\"someKey\":\"someValue\",\"someOther\":true}";
         JsonNode node = objectMapper.readTree(content);
         assertArrayEquals(content.getBytes(IOUtils.UTF8), testSubject.convert(node));
+    }
+
+    @Test
+    void convertIsNullSafe() {
+        assertDoesNotThrow(() -> testSubject.convert(null));
+        assertNotNull(testSubject.convert(null));
     }
 }

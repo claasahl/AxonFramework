@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,16 +16,13 @@
 
 package org.axonframework.eventhandling;
 
-import org.axonframework.messaging.MetaData;
+import org.axonframework.messaging.MessageType;
 import org.junit.jupiter.api.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.stream.Collectors;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
@@ -34,9 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SegmentTest {
 
-    private static final Logger LOG = LoggerFactory.getLogger(SegmentTest.class);
-
-    private List<DomainEventMessage> domainEventMessages;
+    private List<DomainEventMessage<?>> domainEventMessages;
 
     @BeforeEach
     void before() {
@@ -44,12 +39,11 @@ class SegmentTest {
     }
 
     @Test
-    void testSegmentSplitAddsUp() {
-
+    void segmentSplitAddsUp() {
         final List<Long> identifiers = domainEventMessages.stream().map(de -> {
             final String aggregateIdentifier = de.getAggregateIdentifier();
             return UUID.fromString(aggregateIdentifier).getLeastSignificantBits();
-        }).collect(Collectors.toList());
+        }).toList();
 
         // segment 0, mask 0;
         final long count = identifiers.stream().filter(Segment.ROOT_SEGMENT::matches).count();
@@ -64,7 +58,7 @@ class SegmentTest {
     }
 
     @Test
-    void testSegmentSplit() {
+    void segmentSplit() {
 
         // Split segment 0
         final Segment[] splitSegment0 = Segment.ROOT_SEGMENT.split();
@@ -131,7 +125,7 @@ class SegmentTest {
     }
 
     @Test
-    void testSegmentSplitNTimes() {
+    void segmentSplitNTimes() {
         {
             //
             final List<Segment> segmentMasks = Segment.splitBalanced(Segment.ROOT_SEGMENT, 5);
@@ -146,7 +140,7 @@ class SegmentTest {
     }
 
     @Test
-    void testSplitFromRootSegmentAlwaysYieldsSequentialSegmentIds() {
+    void splitFromRootSegmentAlwaysYieldsSequentialSegmentIds() {
         for (int i = 0; i < 500; i++) {
             List<Segment> segments = Segment.splitBalanced(Segment.ROOT_SEGMENT, i);
             assertEquals(i + 1, segments.size());
@@ -157,7 +151,7 @@ class SegmentTest {
     }
 
     @Test
-    void testMergeable() {
+    void mergeable() {
         Segment[] segments = Segment.ROOT_SEGMENT.split();
         assertFalse(segments[0].isMergeableWith(segments[0]));
         assertFalse(segments[1].isMergeableWith(segments[1]));
@@ -176,7 +170,7 @@ class SegmentTest {
     }
 
     @Test
-    void testMergeableSegment() {
+    void mergeableSegment() {
         Segment[] segments = Segment.ROOT_SEGMENT.split();
         assertEquals(segments[1].getSegmentId(), segments[0].mergeableSegmentId());
         assertEquals(segments[0].getSegmentId(), segments[1].mergeableSegmentId());
@@ -184,7 +178,7 @@ class SegmentTest {
     }
 
     @Test
-    void testMergeSegments() {
+    void mergeSegments() {
         Segment[] segments = Segment.ROOT_SEGMENT.split();
         Segment[] segments2 = segments[0].split();
 
@@ -195,7 +189,7 @@ class SegmentTest {
     }
 
     @Test
-    void testSegmentResolve() {
+    void segmentResolve() {
         {
             final int[] segments = {};
             final Segment[] segmentMasks = Segment.computeSegments(segments);
@@ -237,7 +231,6 @@ class SegmentTest {
             assertThat(segmentMasks[0].getMask(), is(0x1));
             assertThat(segmentMasks[1].getMask(), is(0x3));
             assertThat(segmentMasks[2].getMask(), is(0x3));
-
         }
 
         {
@@ -289,7 +282,7 @@ class SegmentTest {
     }
 
     @Test
-    void testComputeSegment() {
+    void computeSegment() {
         for (int segmentCount = 0; segmentCount < 256; segmentCount++) {
             List<Segment> segments = Segment.splitBalanced(Segment.ROOT_SEGMENT, segmentCount);
             int[] segmentIds = new int[segments.size()];
@@ -299,13 +292,13 @@ class SegmentTest {
 
             for (Segment segment : segments) {
                 assertEquals(segment, Segment.computeSegment(segment.getSegmentId(), segmentIds),
-                        "Got wrong segment for " + segmentCount + " number of segments");
+                             "Got wrong segment for " + segmentCount + " number of segments");
             }
         }
     }
 
     @Test
-    void testComputeSegment_Imbalanced() {
+    void computeSegment_Imbalanced() {
         List<Segment> segments = new ArrayList<>();
         Segment initialSegment = Segment.ROOT_SEGMENT;
         for (int i = 0; i < 8; i++) {
@@ -326,13 +319,13 @@ class SegmentTest {
     }
 
     @Test
-    void testSegmentSplitBeyondBoundary() {
+    void segmentSplitBeyondBoundary() {
         final Segment segment = new Segment(0, Integer.MAX_VALUE);
         assertThrows(IllegalStateException.class, segment::split);
     }
 
     @Test
-    void testSegmentSplitOnBoundary() {
+    void segmentSplitOnBoundary() {
 
         final Segment segment = new Segment(0, Integer.MAX_VALUE >>> 1);
         final Segment[] splitSegment = segment.split();
@@ -344,9 +337,11 @@ class SegmentTest {
     }
 
     @Test
-    void testItemsAssignedToOnlyOneSegment() {
+    void itemsAssignedToOnlyOneSegment() {
         for (int j = 0; j < 10; j++) {
-            List<Segment> segments = Segment.splitBalanced(Segment.ROOT_SEGMENT, ThreadLocalRandom.current().nextInt(50) + 1);
+            List<Segment> segments = Segment.splitBalanced(
+                    Segment.ROOT_SEGMENT, ThreadLocalRandom.current().nextInt(50) + 1
+            );
             for (int i = 0; i < 100_000; i++) {
                 String value = UUID.randomUUID().toString();
                 assertEquals(1, segments.stream().filter(s -> s.matches(value)).count());
@@ -354,19 +349,21 @@ class SegmentTest {
         }
     }
 
-    private List<DomainEventMessage> produceEvents() {
-        final ArrayList<DomainEventMessage> events = new ArrayList<>();
+    private List<DomainEventMessage<?>> produceEvents() {
+        final ArrayList<DomainEventMessage<?>> events = new ArrayList<>();
         // Produce a set of
         for (int i = 0; i < 10000; i++) {
             String aggregateIdentifier = UUID.randomUUID().toString();
-            final DomainEventMessage domainEventMessage = newStubDomainEvent(aggregateIdentifier);
+            final DomainEventMessage<?> domainEventMessage = newStubDomainEvent(aggregateIdentifier);
             events.add(domainEventMessage);
         }
         return events;
     }
 
-    private DomainEventMessage newStubDomainEvent(String aggregateIdentifier) {
-        return new GenericDomainEventMessage<>("type", aggregateIdentifier, (long) 0,
-                                               new Object(), MetaData.emptyInstance());
+    private DomainEventMessage<Object> newStubDomainEvent(Object aggregateIdentifier) {
+        return new GenericDomainEventMessage<>(
+                "aggregateType", aggregateIdentifier.toString(), 0L,
+                new MessageType("event"), new Object()
+        );
     }
 }

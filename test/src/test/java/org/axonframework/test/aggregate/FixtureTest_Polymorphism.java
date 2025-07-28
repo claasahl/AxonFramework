@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,11 +16,14 @@
 
 package org.axonframework.test.aggregate;
 
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventsourcing.EventSourcingHandler;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 import org.axonframework.test.matchers.Matchers;
 import org.junit.jupiter.api.*;
@@ -48,7 +51,7 @@ class FixtureTest_Polymorphism {
         fixture = new AggregateTestFixture<>(AggregateA.class).withSubtypes(AggregateB.class, AggregateC.class);
     }
 
-    private static Stream<Arguments> provideForCreationalTest() {
+    private static Stream<Arguments> provideForCreationTest() {
         return Stream.of(
                 Arguments.of((Function<String, Object>) CreateBCommand::new, "AggregateB"),
                 Arguments.of((Function<String, Object>) CreateCCommand::new, "AggregateC")
@@ -56,13 +59,15 @@ class FixtureTest_Polymorphism {
     }
 
     @ParameterizedTest(name = "[{index}] {1}")
-    @MethodSource("provideForCreationalTest")
-    void testCreationOfAggregate(Function<String, Object> commandBuilder, String aggregateType) {
+    @MethodSource("provideForCreationTest")
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void creationOfAggregate(Function<String, Object> commandBuilder, String aggregateType) {
         String id = "id";
         fixture.givenNoPriorActivity()
                .when(commandBuilder.apply(id))
                .expectEventsMatching(Matchers.predicate(events -> {
-                   DomainEventMessage<CreatedEvent> evt = (DomainEventMessage<CreatedEvent>) events.get(0);
+                   //noinspection unchecked
+                   DomainEventMessage<CreatedEvent> evt = (DomainEventMessage<CreatedEvent>) events.getFirst();
                    return evt.getType().equals(aggregateType)
                            && events.size() == 1
                            && evt.getPayload().id.equals(id);
@@ -71,19 +76,20 @@ class FixtureTest_Polymorphism {
 
     @ParameterizedTest
     @ValueSource(strings = {"AggregateB", "AggregateC"})
-    void testCommonCommandOnAggregate(String aggregateType) {
+    @Disabled("TODO #3061 - Revisit Aggregate Polymorphism")
+    void commonCommandOnAggregate(String aggregateType) {
         String id = "id";
-        DomainEventMessage<CreatedEvent> creationalEvent = new GenericDomainEventMessage<>(aggregateType,
-                                                                                           id,
-                                                                                           0,
-                                                                                           new CreatedEvent(id));
-        fixture.given(creationalEvent)
+        DomainEventMessage<CreatedEvent> creationEvent = new GenericDomainEventMessage<>(
+                aggregateType, id, 0, new MessageType("event"), new CreatedEvent(id)
+        );
+        fixture.given(creationEvent)
                .when(new CommonCommand(id))
                .expectResultMessagePayload(aggregateType + id);
     }
 
     @Test
-    void testCreatingNewPolymorphicAggregate() {
+    @Disabled("TODO #3061 - Revisit Aggregate Polymorphism")
+    void creatingNewPolymorphicAggregate() {
         AggregateTestFixture<AggregateD> fixture = new AggregateTestFixture<>(AggregateD.class);
         String id = "id";
         fixture.givenNoPriorActivity()
@@ -206,7 +212,8 @@ class FixtureTest_Polymorphism {
         }
 
         @CommandHandler
-        public AggregateB(CreateBCommand cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateBCommand cmd) {
             apply(new CreatedEvent(cmd.id));
         }
     }
@@ -217,7 +224,8 @@ class FixtureTest_Polymorphism {
         }
 
         @CommandHandler
-        public AggregateC(CreateCCommand cmd) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateCCommand cmd) {
             apply(new CreatedEvent(cmd.id));
         }
     }
@@ -231,9 +239,14 @@ class FixtureTest_Polymorphism {
         }
 
         @CommandHandler
-        public AggregateD(CreateDCommand cmd) throws Exception {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateDCommand cmd) throws Exception {
             apply(new DCreatedEvent(cmd.id));
-            createNew(AggregateA.class, () -> new AggregateB(new CreateBCommand(cmd.id)));
+            createNew(AggregateA.class, () -> {
+                AggregateB aggregate = new AggregateB();
+                aggregate.handle(new CreateBCommand(cmd.id));
+                return aggregate;
+            });
         }
 
         @EventSourcingHandler

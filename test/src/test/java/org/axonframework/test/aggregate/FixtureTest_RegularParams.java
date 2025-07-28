@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,20 @@
 
 package org.axonframework.test.aggregate;
 
+import org.axonframework.commandhandling.CommandResultMessage;
+import org.axonframework.commandhandling.GenericCommandResultMessage;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.modelling.command.AggregateNotFoundException;
 import org.axonframework.test.AxonAssertionError;
 import org.hamcrest.core.IsNull;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import static org.axonframework.commandhandling.GenericCommandResultMessage.asCommandResultMessage;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Allard Buijze
@@ -47,7 +46,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_NoEventsInStore() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_NoEventsInStore() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                      fixture.getEventBus()))
                 .given()
@@ -56,7 +56,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFirstFixture() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void firstFixture() {
         ResultValidator<StandardAggregate> validator = fixture
                 .registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                       fixture.getEventBus()))
@@ -67,7 +68,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFirstFixtureMatchingCommandResultMessage() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void firstFixtureMatchingCommandResultMessage() {
         ResultValidator<StandardAggregate> validator = fixture
                 .registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                       fixture.getEventBus()))
@@ -78,7 +80,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testExpectEventsIgnoresFilteredField() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void expectEventsIgnoresFilteredField() {
         ResultValidator<StandardAggregate> validator = fixture
                 .registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                       fixture.getEventBus()))
@@ -90,7 +93,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_SetterInjection() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_SetterInjection() {
         MyCommandHandler commandHandler = new MyCommandHandler();
         commandHandler.setRepository(fixture.getRepository());
         fixture.registerAnnotatedCommandHandler(commandHandler)
@@ -102,7 +106,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_GivenAList() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_GivenAList() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -116,7 +121,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixtureDetectsStateChangeOutsideOfHandler_ExplicitValue() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixtureDetectsStateChangeOutsideOfHandler_ExplicitValue() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -132,7 +138,7 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixtureIgnoredStateChangeInFilteredField() {
+    void fixtureIgnoredStateChangeInFilteredField() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -144,7 +150,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixtureDetectsStateChangeOutsideOfHandler_NullValue() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixtureDetectsStateChangeOutsideOfHandler_NullValue() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -159,7 +166,7 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixtureDetectsStateChangeOutsideOfHandler_Ignored() {
+    void fixtureDetectsStateChangeOutsideOfHandler_Ignored() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -171,7 +178,7 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixtureDetectsStateChangeOutsideOfHandler_AggregateGeneratesIdentifier() {
+    void fixtureDetectsStateChangeOutsideOfHandler_AggregateGeneratesIdentifier() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                      fixture.getEventBus()))
                 .given()
@@ -179,7 +186,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixtureDetectsStateChangeOutsideOfHandler_AggregateDeleted() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixtureDetectsStateChangeOutsideOfHandler_AggregateDeleted() {
         TestExecutor<StandardAggregate> exec = fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                                          fixture.getEventBus()))
                 .given(new MyEvent("aggregateId", 5));
@@ -190,7 +198,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_AggregateDeleted() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_AggregateDeleted() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                      fixture.getEventBus()))
                 .given(new MyEvent("aggregateId", 5))
@@ -199,7 +208,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixtureGivenCommands() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixtureGivenCommands() {
         fixture.registerAnnotatedCommandHandler(new MyCommandHandler(fixture.getRepository(),
                                                                      fixture.getEventBus()))
                 .givenCommands(new CreateAggregateCommand("aggregateId"),
@@ -211,7 +221,7 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_CommandHandlerDispatchesNonDomainEvents() {
+    void fixture_CommandHandlerDispatchesNonDomainEvents() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -227,7 +237,7 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_ReportWrongNumberOfEvents() {
+    void fixture_ReportWrongNumberOfEvents() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -244,7 +254,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_ReportWrongEvents() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixture_ReportWrongEvents() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -262,7 +273,8 @@ class FixtureTest_RegularParams {
     }
 
     @Test
-    void testFixture_UnexpectedException() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_UnexpectedException() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -275,11 +287,16 @@ class FixtureTest_RegularParams {
                         .when(new StrangeCommand("aggregateId"))
                         .expectSuccessfulHandlerExecution()
         );
-        assertTrue(e.getMessage().contains("but got <exception of type [StrangeCommandReceivedException]>"));
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("but got <exception of type [StrangeCommandReceivedException]>"),
+                resultMessage
+        );
     }
 
     @Test
-    void testFixture_UnexpectedReturnValue() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixture_UnexpectedReturnValue() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -292,13 +309,20 @@ class FixtureTest_RegularParams {
                         .when(new TestCommand("aggregateId"))
                         .expectException(RuntimeException.class)
         );
-        assertTrue(e.getMessage().contains("The command handler returned normally, but an exception was expected"));
-        assertTrue(e.getMessage().contains(
-                "<an instance of java.lang.RuntimeException> but returned with <null>"));
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("The command handler returned normally, but an exception was expected"),
+                resultMessage
+        );
+        assertTrue(
+                resultMessage.contains("<an instance of java.lang.RuntimeException>,\n but got <null>"),
+                resultMessage
+        );
     }
 
     @Test
-    void testFixture_WrongReturnValue() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_WrongReturnValue() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -309,11 +333,16 @@ class FixtureTest_RegularParams {
                         .when(new TestCommand("aggregateId"))
                         .expectResultMessagePayload("some")
         );
-        assertTrue(e.getMessage().contains("<Message with payload <\"some\">> but got <Message with payload <null>>"), e.getMessage());
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("<Message with payload <\"some\">>,\n but got <Message with payload <null>>."),
+                resultMessage
+        );
     }
 
     @Test
-    void testFixture_WrongExceptionType() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void fixture_WrongExceptionType() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -325,53 +354,60 @@ class FixtureTest_RegularParams {
                         .when(new StrangeCommand("aggregateId"))
                         .expectException(IOException.class)
         );
-        assertTrue(e.getMessage().contains(
-                "<an instance of java.io.IOException> but got <exception of type [StrangeCommandReceivedException]>"));
+        String resultMessage = e.getMessage();
+        assertTrue(
+                resultMessage.contains("<an instance of java.io.IOException>,\n "
+                                               + "but got <exception of type [StrangeCommandReceivedException]>"),
+                resultMessage
+        );
     }
 
     @Test
-    void testFixture_WrongEventContents() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixture_WrongEventContents() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
         MyCommandHandler commandHandler = new MyCommandHandler(fixture.getRepository(),
                                                                fixture.getEventBus());
 
-        AxonAssertionError e = assertThrows(AxonAssertionError.class, () ->
-                fixture
-                        .registerAnnotatedCommandHandler(commandHandler)
-                        .given(givenEvents)
-                        .when(new TestCommand("aggregateId"))
-                        .expectEvents(new MyEvent("aggregateId", 5)) // should be 4
-                        .expectSuccessfulHandlerExecution()
+        ResultValidator<StandardAggregate> resultValidator = fixture.registerAnnotatedCommandHandler(commandHandler)
+                                                                    .given(givenEvents)
+                                                                    .when(new TestCommand("aggregateId"));
+        // Should be 4 instead of 5.
+        AxonAssertionError e = assertThrows(
+                AxonAssertionError.class, () -> resultValidator.expectEvents(new MyEvent("aggregateId", 5))
         );
         assertTrue(e.getMessage().contains(
-                "In a message of type [MyEvent], the property [someValue] was not as expected."));
-        assertTrue(e.getMessage().contains("Expected <5> but got <4>"));
+                "The message of type [MyEvent] was not as expected."));
+        assertTrue(e.getMessage().contains("Expected <MyEvent{someValue=5"));
+        assertTrue(e.getMessage().contains("but got <MyEvent{someValue=4"));
     }
 
     @Test
-    void testFixture_WrongEventContents_WithNullValues() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixture_WrongEventContents_WithNullValues() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
         MyCommandHandler commandHandler = new MyCommandHandler(fixture.getRepository(),
                                                                fixture.getEventBus());
-        AxonAssertionError e = assertThrows(AxonAssertionError.class, () ->
-                fixture
-                        .registerAnnotatedCommandHandler(commandHandler)
-                        .given(givenEvents)
-                        .when(new TestCommand("aggregateId"))
-                        .expectEvents(new MyEvent("aggregateId", null)) // should be 4
-                        .expectSuccessfulHandlerExecution()
+
+        ResultValidator<StandardAggregate> resultValidator = fixture.registerAnnotatedCommandHandler(commandHandler)
+                                                                    .given(givenEvents)
+                                                                    .when(new TestCommand("aggregateId"));
+        // Should be 4 instead of null.
+        AxonAssertionError e = assertThrows(
+                AxonAssertionError.class, () -> resultValidator.expectEvents(new MyEvent("aggregateId", null))
         );
-        assertTrue(e.getMessage().contains(
-                "In a message of type [MyEvent], the property [someValue] was not as expected."));
-        assertTrue(e.getMessage().contains("Expected <<null>> but got <4>"));
+        assertTrue(e.getMessage().contains("The message of type [MyEvent] was not as expected."));
+        assertTrue(e.getMessage().contains("Expected <MyEvent{someValue=null"));
+        assertTrue(e.getMessage().contains("but got <MyEvent{someValue=4"));
     }
 
     @Test
-    void testFixture_ExpectedPublishedSameAsStored() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void fixture_ExpectedPublishedSameAsStored() {
         List<?> givenEvents = Arrays.asList(new MyEvent("aggregateId", 1),
                                             new MyEvent("aggregateId", 2),
                                             new MyEvent("aggregateId", 3));
@@ -388,5 +424,9 @@ class FixtureTest_RegularParams {
         assertTrue(e.getMessage().contains("The published events do not match the expected events"));
         assertTrue(e.getMessage().contains("org.axonframework.test.aggregate.MyEvent <|> "));
         assertTrue(e.getMessage().contains("probable cause"));
+    }
+
+    private static <R> CommandResultMessage<R> asCommandResultMessage(Throwable exception) {
+        return new GenericCommandResultMessage<>(new MessageType(exception.getClass()), exception);
     }
 }

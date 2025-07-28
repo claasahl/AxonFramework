@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,36 +13,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.axonframework.queryhandling;
 
-import org.axonframework.messaging.annotation.MessageHandler;
-
-import java.lang.annotation.*;
+import jakarta.annotation.Nonnull;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.configuration.MessageHandler;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 /**
- * Marker annotation to mark any method on an object as being a QueryHandler. Use the {@link
- * org.axonframework.queryhandling.annotation.AnnotationQueryHandlerAdapter AnnotationQueryHandlerAdapter} to subscribe
- * the annotated class to the query bus.
- * <p>
- * The annotated method's first parameter is the query handled by that method. Optionally, the query handler may
- * specify a second parameter of type {@link org.axonframework.messaging.MetaData}. The active MetaData will be
- * passed if that parameter is supplied.
+ * Interface describing a handler of {@link QueryMessage queries}.
  *
- * @author Marc Gathier
- * @since 3.1
+ * @author Steven van Beelen
+ * @since 5.0.0
  */
-@Documented
-@Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
-@MessageHandler(messageType = QueryMessage.class)
-public @interface QueryHandler {
+@FunctionalInterface
+public interface QueryHandler extends MessageHandler {
 
     /**
-     * The name of the Query this handler listens to. Defaults to the fully qualified class name of the payload type
-     * (i.e. first parameter).
+     * Handles the given {@code query} within the given {@code context}.
+     * <p>
+     * The resulting {@link MessageStream stream} may contain zero, one, or N
+     * {@link QueryResponseMessage response messages}.
      *
-     * @return The query name
+     * @param query   The query to handle.
+     * @param context The context to the given {@code command} is handled in.
+     * @return A {@code MessagesStream} of zero, one, or N {@link QueryResponseMessage response messages}.
      */
-    String queryName() default "";
-
+    @Nonnull
+    MessageStream<QueryResponseMessage<?>> handle(@Nonnull QueryMessage<?, ?> query,
+                                                  @Nonnull ProcessingContext context);
 }

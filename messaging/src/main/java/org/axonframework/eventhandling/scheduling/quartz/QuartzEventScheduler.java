@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.axonframework.eventhandling.scheduling.quartz;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.transaction.NoTransactionManager;
@@ -23,15 +24,17 @@ import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.eventhandling.EventBus;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.eventhandling.scheduling.EventScheduler;
 import org.axonframework.eventhandling.scheduling.ScheduleToken;
 import org.axonframework.eventhandling.scheduling.SchedulingException;
-import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.MessageTypeResolver;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.serialization.SerializedObject;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.SimpleSerializedObject;
-import org.axonframework.serialization.xml.XStreamSerializer;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
@@ -47,8 +50,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
+import static org.axonframework.eventhandling.GenericEventMessage.clock;
 import static org.axonframework.eventhandling.scheduling.quartz.FireEventJob.*;
 import static org.axonframework.messaging.Headers.*;
 import static org.quartz.JobKey.jobKey;
@@ -61,7 +66,7 @@ import static org.quartz.JobKey.jobKey;
  * @see FireEventJob
  * @since 0.7
  */
-public class QuartzEventScheduler implements org.axonframework.eventhandling.scheduling.EventScheduler {
+public class QuartzEventScheduler implements EventScheduler {
 
     private static final Logger logger = LoggerFactory.getLogger(QuartzEventScheduler.class);
 
@@ -72,6 +77,7 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
     private final EventBus eventBus;
     private final EventJobDataBinder jobDataBinder;
     private final TransactionManager transactionManager;
+    private final MessageTypeResolver messageTypeResolver;
 
     private String groupIdentifier = DEFAULT_GROUP_NAME;
     private volatile boolean initialized;
@@ -79,11 +85,10 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
     /**
      * Instantiate a {@link QuartzEventScheduler} based on the fields contained in the {@link Builder}.
      * <p>
-     * Will assert that the {@link Scheduler}, {@link EventBus}, {@link EventJobDataBinder} and
-     * {@link TransactionManager} are not {@code null}, and will throw an {@link AxonConfigurationException} if any of
-     * them is {@code null}.
-     * The EventBus, TransactionManager and EventJobDataBinder will be tied to the Scheduler's context. If this
-     * initialization step fails, this will too result in an AxonConfigurationException.
+     * Will assert that the {@link Scheduler} and {@link EventBus} are not {@code null}, and will throw an
+     * {@link AxonConfigurationException} if any of them is {@code null}. The EventBus, TransactionManager and
+     * EventJobDataBinder will be tied to the Scheduler's context. If this initialization step fails, this will too
+     * result in an AxonConfigurationException.
      *
      * @param builder the {@link Builder} used to instantiate a {@link QuartzEventScheduler} instance
      */
@@ -91,8 +96,9 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         builder.validate();
         scheduler = builder.scheduler;
         eventBus = builder.eventBus;
-        jobDataBinder = builder.jobDataBinder;
+        jobDataBinder = builder.jobDataBinderSupplier.get();
         transactionManager = builder.transactionManager;
+        messageTypeResolver = builder.messageTypeResolver;
 
         try {
             initialize();
@@ -105,15 +111,18 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         scheduler.getContext().put(EVENT_BUS_KEY, eventBus);
         scheduler.getContext().put(TRANSACTION_MANAGER_KEY, transactionManager);
         scheduler.getContext().put(EVENT_JOB_DATA_BINDER_KEY, jobDataBinder);
+        scheduler.getContext().put(MESSAGE_TYPE_RESOLVER_KEY, messageTypeResolver);
         initialized = true;
     }
 
     /**
      * Instantiate a Builder to be able to create a {@link QuartzEventScheduler}.
      * <p>
-     * The {@link EventJobDataBinder} is defaulted to an {@link DirectEventJobDataBinder}, and the
-     * {@link TransactionManager} defaults to a {@link NoTransactionManager}.
-     * The {@link Scheduler} and {@link EventBus} are a <b>hard requirements</b> and as such should be provided.
+     * The {@link EventJobDataBinder} is defaulted to a {@link DirectEventJobDataBinder} using the configured
+     * {@link Serializer}, and the {@link TransactionManager} defaults to a {@link NoTransactionManager}. Note that if
+     * the {@code Serializer} is not set, the configuration expects the {@code EventJobDataBinder} to be set.
+     * <p>
+     * The {@link Scheduler} and {@link EventBus} are <b>hard requirements</b> and as such should be provided.
      *
      * @return a Builder to be able to create a {@link QuartzEventScheduler}
      */
@@ -124,24 +133,40 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
     @Override
     public ScheduleToken schedule(Instant triggerDateTime, Object event) {
         Assert.state(initialized, () -> "Scheduler is not yet initialized");
-        EventMessage eventMessage = GenericEventMessage.asEventMessage(event);
+        EventMessage eventMessage = asEventMessage(event);
         String jobIdentifier = JOB_NAME_PREFIX + eventMessage.getIdentifier();
         QuartzScheduleToken tr = new QuartzScheduleToken(jobIdentifier, groupIdentifier);
         try {
             JobDetail jobDetail = buildJobDetail(eventMessage, new JobKey(jobIdentifier, groupIdentifier));
             scheduler.scheduleJob(jobDetail, buildTrigger(triggerDateTime, jobDetail.getKey()));
         } catch (SchedulerException e) {
-            throw new SchedulingException("An error occurred while setting a timer for a saga", e);
+            throw new SchedulingException("An error occurred while scheduling an event.", e);
         }
         return tr;
     }
+
+    @SuppressWarnings("unchecked")
+    private <E> EventMessage<E> asEventMessage(@Nonnull Object event) {
+        if (event instanceof EventMessage<?>) {
+            return (EventMessage<E>) event;
+        } else if (event instanceof Message<?>) {
+            Message<E> message = (Message<E>) event;
+            return new GenericEventMessage<>(message, () -> GenericEventMessage.clock.instant());
+        }
+        return new GenericEventMessage<>(
+                messageTypeResolver.resolveOrThrow(event),
+                (E) event,
+                MetaData.emptyInstance()
+        );
+    }
+
 
     /**
      * Builds the JobDetail instance for Quartz, which defines the Job that needs to be executed when the trigger
      * fires.
      * <p/>
-     * The resulting JobDetail must be identified by the given {@code jobKey} and represent a Job that dispatches
-     * the given {@code event}.
+     * The resulting JobDetail must be identified by the given {@code jobKey} and represent a Job that dispatches the
+     * given {@code event}.
      * <p/>
      * This method may be safely overridden to change behavior. Defaults to a JobDetail to fire a {@link FireEventJob}.
      *
@@ -175,7 +200,7 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
 
     @Override
     public ScheduleToken schedule(Duration triggerDuration, Object event) {
-        return schedule(Instant.now().plus(triggerDuration), event);
+        return schedule(clock.instant().plus(triggerDuration), event);
     }
 
     @Override
@@ -204,13 +229,7 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         this.groupIdentifier = groupIdentifier;
     }
 
-    /**
-     * {@inheritDoc}
-     * <p>
-     * Will shutdown in the {@link Phase#INBOUND_EVENT_CONNECTORS} phase.
-     */
     @Override
-    @ShutdownHandler(phase = Phase.INBOUND_EVENT_CONNECTORS)
     public void shutdown() {
         try {
             scheduler.shutdown(true);
@@ -230,26 +249,15 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
     public static class DirectEventJobDataBinder implements EventJobDataBinder {
 
         /**
-         * The key used to locate the event in the {@link JobDataMap}.
-         *
-         * @deprecated in favor of the default message keys | only maintained for backwards compatibility
+         * Key pointing to the {@link Message#type()} as a {@code String} of the deadline in the {@link JobDataMap}.
          */
-        @Deprecated
-        public static final String EVENT_KEY = EventMessage.class.getName();
+        public static final String TYPE = "type";
 
         private final Serializer serializer;
 
         /**
-         * Instantiate a {@link DirectEventJobDataBinder} which defaults to a {@link XStreamSerializer} for
-         * de-/serializing event messages.
-         */
-        public DirectEventJobDataBinder() {
-            this(XStreamSerializer.defaultSerializer());
-        }
-
-        /**
-         * Instantiate a {@link DirectEventJobDataBinder} with the provided {@link Serializer} for
-         * de-/serializing event messages.
+         * Instantiate a {@code DirectEventJobDataBinder} with the provided {@link Serializer} for de-/serializing event
+         * messages.
          *
          * @param serializer the {@link Serializer} used for de-/serializing event messages
          */
@@ -261,9 +269,10 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         public JobDataMap toJobData(Object event) {
             JobDataMap jobData = new JobDataMap();
 
-            EventMessage eventMessage = (EventMessage) event;
+            EventMessage<?> eventMessage = (EventMessage<?>) event;
 
             jobData.put(MESSAGE_ID, eventMessage.getIdentifier());
+            jobData.put(TYPE, eventMessage.type().toString());
             jobData.put(MESSAGE_TIMESTAMP, eventMessage.getTimestamp().toString());
 
             SerializedObject<byte[]> serializedPayload =
@@ -279,36 +288,13 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
             return jobData;
         }
 
-        /**
-         * <b>Note</b> that this function is able to retrieve an Event Message in two formats. The first is the
-         * original, deprecated approach, which uses the Quartz serializer (read Java serialization) to serialize an
-         * entire event message at once. The second approach uses the configurable {@link Serializer} in this class to
-         * serialized the payload and metadata of an event message. All fields which required to instantiate a
-         * {@link GenericEventMessage} are currently stored in the {@code jobDataMap} when calling the
-         * {@link DirectEventJobDataBinder#toJobData(Object)} function.
-         * Approach one only exists for backwards compatibility and should be removed in subsequent major releases.
-         * <p>
-         * {@inheritDoc}
-         */
         @Override
         public Object fromJobData(JobDataMap jobDataMap) {
-            if (jobDataMap.containsKey(SERIALIZED_MESSAGE_PAYLOAD)) {
-                return new GenericEventMessage<>((String) jobDataMap.get(MESSAGE_ID),
-                                                 deserializePayload(jobDataMap),
-                                                 deserializeMetaData(jobDataMap),
-                                                 retrieveDeadlineTimestamp(jobDataMap));
-            }
-
-            return fromJobDataMap(jobDataMap);
-        }
-
-        /**
-         * @deprecated this private function is in place for backwards compatibility only. Ideally, the event message is
-         * retrieved based on the serialized keys.
-         */
-        @Deprecated
-        private Object fromJobDataMap(JobDataMap jobDataMap) {
-            return jobDataMap.get(EVENT_KEY);
+            return new GenericEventMessage<>((String) jobDataMap.get(MESSAGE_ID),
+                                             MessageType.fromString((String) jobDataMap.get(TYPE)),
+                                             deserializePayload(jobDataMap),
+                                             deserializeMetaData(jobDataMap),
+                                             retrieveDeadlineTimestamp(jobDataMap));
         }
 
         private Object deserializePayload(JobDataMap jobDataMap) {
@@ -321,7 +307,7 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
             return serializer.deserialize(serializedPayload);
         }
 
-        private Map<String, ?> deserializeMetaData(JobDataMap jobDataMap) {
+        private Map<String, String> deserializeMetaData(JobDataMap jobDataMap) {
             SimpleSerializedObject<byte[]> serializedDeadlineMetaData = new SimpleSerializedObject<>(
                     (byte[]) jobDataMap.get(MESSAGE_METADATA), byte[].class, MetaData.class.getName(), null
             );
@@ -340,16 +326,20 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
     /**
      * Builder class to instantiate a {@link QuartzEventScheduler}.
      * <p>
-     * The {@link EventJobDataBinder} is defaulted to an {@link DirectEventJobDataBinder}, and the
-     * {@link TransactionManager} defaults to a {@link NoTransactionManager}.
-     * The {@link Scheduler} and {@link EventBus} are a <b>hard requirements</b> and as such should be provided.
+     * The {@link EventJobDataBinder} is defaulted to a {@link DirectEventJobDataBinder} using the configured
+     * {@link Serializer}, and the {@link TransactionManager} defaults to a {@link NoTransactionManager}. Note that if
+     * the {@code Serializer} is not set, the configuration expects the {@code EventJobDataBinder} to be set.
+     * <p>
+     * The {@link Scheduler} and {@link EventBus} are <b>hard requirements</b> and as such should be provided.
      */
     public static class Builder {
 
         private Scheduler scheduler;
         private EventBus eventBus;
-        private EventJobDataBinder jobDataBinder = new DirectEventJobDataBinder();
+        private Supplier<EventJobDataBinder> jobDataBinderSupplier;
         private TransactionManager transactionManager = NoTransactionManager.INSTANCE;
+        private Supplier<Serializer> serializer;
+        private MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
         /**
          * Sets the {@link Scheduler} used for scheduling and triggering purposes of the deadlines.
@@ -385,7 +375,7 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
          */
         public Builder jobDataBinder(EventJobDataBinder jobDataBinder) {
             assertNonNull(jobDataBinder, "EventJobDataBinder may not be null");
-            this.jobDataBinder = jobDataBinder;
+            this.jobDataBinderSupplier = () -> jobDataBinder;
             return this;
         }
 
@@ -400,6 +390,33 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         public Builder transactionManager(TransactionManager transactionManager) {
             assertNonNull(transactionManager, "TransactionManager may not be null");
             this.transactionManager = transactionManager;
+            return this;
+        }
+
+        /**
+         * Sets the {@link Serializer} used by the {@link EventJobDataBinder}. The {@code EventJobDataBinder} uses the
+         * {@code Serializer} to de-/serialize the scheduled event.
+         *
+         * @param serializer a {@link Serializer} used by the {@link EventJobDataBinder} when serializing events
+         * @return the current Builder instance, for fluent interfacing
+         */
+        public Builder serializer(Serializer serializer) {
+            assertNonNull(serializer, "Serializer may not be null");
+            this.serializer = () -> serializer;
+            return this;
+        }
+
+        /**
+         * Sets the {@link MessageTypeResolver} used to resolve the {@link MessageType} when publishing
+         * {@link EventMessage EventMessages}. If not set, a {@link ClassBasedMessageTypeResolver} is used by default.
+         *
+         * @param messageTypeResolver The {@link MessageTypeResolver} used to provide the {@link MessageType} for
+         *                            {@link EventMessage EventMessages}.
+         * @return The current Builder instance, for fluent interfacing.
+         */
+        public Builder messageNameResolver(MessageTypeResolver messageTypeResolver) {
+            assertNonNull(messageTypeResolver, "MessageNameResolver may not be null");
+            this.messageTypeResolver = messageTypeResolver;
             return this;
         }
 
@@ -421,6 +438,10 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         protected void validate() throws AxonConfigurationException {
             assertNonNull(scheduler, "The Scheduler is a hard requirement and should be provided");
             assertNonNull(eventBus, "The EventBus is a hard requirement and should be provided");
+            assertNonNull(serializer, "The Serializer is a hard requirement and should be provided");
+            if (jobDataBinderSupplier == null) {
+                jobDataBinderSupplier = () -> new DirectEventJobDataBinder(serializer.get());
+            }
         }
     }
 }

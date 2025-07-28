@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,11 @@ package org.axonframework.commandhandling.distributed;
 
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.GenericCommandMessage;
-import org.axonframework.commandhandling.RoutingKey;
-import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.commandhandling.annotation.RoutingKey;
+import org.axonframework.messaging.MessageType;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link AnnotationRoutingStrategy}.
@@ -36,100 +35,59 @@ class AnnotationRoutingStrategyTest {
 
     @BeforeEach
     void setUp() {
-        testSubject = AnnotationRoutingStrategy.defaultStrategy();
+        testSubject = new AnnotationRoutingStrategy();
     }
 
     @Test
-    void testGetRoutingKeyFromField() {
-        CommandMessage<SomeFieldAnnotatedCommand> testCommand = new GenericCommandMessage<>(new SomeFieldAnnotatedCommand());
+    void getRoutingKeyFromField() {
+        CommandMessage<SomeFieldAnnotatedCommand> testCommand = new GenericCommandMessage<>(
+                new MessageType(SomeFieldAnnotatedCommand.class), new SomeFieldAnnotatedCommand()
+        );
         assertEquals("Target", testSubject.getRoutingKey(testCommand));
 
-        CommandMessage<SomeOtherFieldAnnotatedCommand> otherTestCommand =
-                new GenericCommandMessage<>(new SomeOtherFieldAnnotatedCommand());
+        CommandMessage<SomeOtherFieldAnnotatedCommand> otherTestCommand = new GenericCommandMessage<>(
+                new MessageType(SomeOtherFieldAnnotatedCommand.class), new SomeOtherFieldAnnotatedCommand()
+        );
         assertEquals("Target", testSubject.getRoutingKey(otherTestCommand));
     }
 
     @Test
-    void testGetRoutingKeyFromMethod() {
-        CommandMessage<SomeMethodAnnotatedCommand> testCommand =
-                new GenericCommandMessage<>(new SomeMethodAnnotatedCommand());
+    void getRoutingKeyFromMethod() {
+        CommandMessage<SomeMethodAnnotatedCommand> testCommand = new GenericCommandMessage<>(
+                new MessageType(SomeMethodAnnotatedCommand.class), new SomeMethodAnnotatedCommand()
+        );
         assertEquals("Target", testSubject.getRoutingKey(testCommand));
 
-        CommandMessage<SomeOtherMethodAnnotatedCommand> otherTestCommand =
-                new GenericCommandMessage<>(new SomeOtherMethodAnnotatedCommand());
+        CommandMessage<SomeOtherMethodAnnotatedCommand> otherTestCommand = new GenericCommandMessage<>(
+                new MessageType(SomeOtherMethodAnnotatedCommand.class), new SomeOtherMethodAnnotatedCommand()
+        );
+
         assertEquals("Target", testSubject.getRoutingKey(otherTestCommand));
     }
 
     @Test
-    void testNullRoutingKeyOnFieldThrowsCommandDispatchException() {
-        AnnotationRoutingStrategy errorFallbackRoutingStrategy =
-                AnnotationRoutingStrategy.builder()
-                                         .fallbackRoutingStrategy(UnresolvedRoutingKeyPolicy.ERROR)
-                                         .build();
-
-        CommandMessage<SomeNullMethodAnnotatedCommand> testCommand =
-                new GenericCommandMessage<>(new SomeNullMethodAnnotatedCommand());
-
-        assertThrows(CommandDispatchException.class, () -> errorFallbackRoutingStrategy.getRoutingKey(testCommand));
-    }
-
-    @Test
-    void testNullRoutingKeyOnMethodThrowsCommandDispatchException() {
-        AnnotationRoutingStrategy errorFallbackRoutingStrategy =
-                AnnotationRoutingStrategy.builder()
-                                         .fallbackRoutingStrategy(UnresolvedRoutingKeyPolicy.ERROR)
-                                         .build();
-
-        CommandMessage<SomeNullMethodAnnotatedCommand> testCommand =
-                new GenericCommandMessage<>(new SomeNullMethodAnnotatedCommand());
-
-        assertThrows(CommandDispatchException.class, () -> errorFallbackRoutingStrategy.getRoutingKey(testCommand));
-    }
-
-    @Test
-    void testResolvesRoutingKeyFromAnnotationDoesNotInvokeFallbackStrategy() {
-        RoutingStrategy fallbackRoutingStrategy = mock(RoutingStrategy.class);
-
+    void resolvesRoutingKeyFromAnnotationDoesNotInvokeFallbackStrategy() {
         AnnotationRoutingStrategy testSubjectWithMockedFallbackStrategy =
-                AnnotationRoutingStrategy.builder()
-                                         .fallbackRoutingStrategy(fallbackRoutingStrategy)
-                                         .build();
+                new AnnotationRoutingStrategy();
 
-        CommandMessage<SomeFieldAnnotatedCommand> testCommand =
-                new GenericCommandMessage<>(new SomeFieldAnnotatedCommand());
+        CommandMessage<SomeFieldAnnotatedCommand> testCommand = new GenericCommandMessage<>(
+                new MessageType(SomeFieldAnnotatedCommand.class), new SomeFieldAnnotatedCommand()
+        );
 
         assertEquals("Target", testSubjectWithMockedFallbackStrategy.getRoutingKey(testCommand));
-        verifyNoInteractions(fallbackRoutingStrategy);
     }
 
     @Test
-    void testResolvesRoutingKeyFromFallbackStrategy() {
-        String expectedRoutingKey = "some-routing-key";
-        RoutingStrategy fallbackRoutingStrategy = mock(RoutingStrategy.class);
-        when(fallbackRoutingStrategy.getRoutingKey(any())).thenReturn(expectedRoutingKey);
-
+    void resolvesRoutingKeyFromFallbackStrategy() {
         AnnotationRoutingStrategy testSubjectWithMockedFallbackStrategy =
-                AnnotationRoutingStrategy.builder()
-                                         .fallbackRoutingStrategy(fallbackRoutingStrategy)
-                                         .build();
+                new AnnotationRoutingStrategy();
 
-        CommandMessage<SomeCommandWithoutTheRoutingAnnotation> testCommand =
-                new GenericCommandMessage<>(new SomeCommandWithoutTheRoutingAnnotation("target"));
+        CommandMessage<SomeCommandWithoutTheRoutingAnnotation> testCommand = new GenericCommandMessage<>(
+                new MessageType(SomeCommandWithoutTheRoutingAnnotation.class),
+                new SomeCommandWithoutTheRoutingAnnotation("target")
+        );
 
-        assertEquals(expectedRoutingKey, testSubjectWithMockedFallbackStrategy.getRoutingKey(testCommand));
-        verify(fallbackRoutingStrategy).getRoutingKey(testCommand);
-    }
-
-    @Test
-    void testBuildAnnotationRoutingStrategyFailsForNullFallbackRoutingStrategy() {
-        AnnotationRoutingStrategy.Builder builderTestSubject = AnnotationRoutingStrategy.builder();
-        assertThrows(AxonConfigurationException.class, () -> builderTestSubject.fallbackRoutingStrategy(null));
-    }
-
-    @Test
-    void testBuildAnnotationRoutingStrategyFailsForNullAnnotationType() {
-        AnnotationRoutingStrategy.Builder builderTestSubject = AnnotationRoutingStrategy.builder();
-        assertThrows(AxonConfigurationException.class, () -> builderTestSubject.annotationType(null));
+        assertNull(testSubjectWithMockedFallbackStrategy.getRoutingKey(testCommand));
     }
 
     public static class SomeFieldAnnotatedCommand {
@@ -167,13 +125,7 @@ class AnnotationRoutingStrategyTest {
         }
     }
 
-    private static class SomeObject {
-
-        private final String target;
-
-        public SomeObject(String target) {
-            this.target = target;
-        }
+    private record SomeObject(String target) {
 
         @Override
         public String toString() {
@@ -192,16 +144,7 @@ class AnnotationRoutingStrategyTest {
         }
     }
 
-    public static class SomeCommandWithoutTheRoutingAnnotation {
+    public record SomeCommandWithoutTheRoutingAnnotation(String target) {
 
-        private final String target;
-
-        public SomeCommandWithoutTheRoutingAnnotation(String target) {
-            this.target = target;
-        }
-
-        public String getTarget() {
-            return target;
-        }
     }
 }

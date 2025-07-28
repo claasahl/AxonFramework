@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,9 +25,13 @@ import java.util.function.Supplier;
  * Generic implementation of a {@link TrackedEventMessage}.
  *
  * @param <T> The type of payload contained in this Message
+ * @deprecated In favor of pairing the {@link TrackingToken} through the
+ * {@link org.axonframework.messaging.MessageStream.Entry} its {@link org.axonframework.messaging.Context} with an
+ * {@link EventMessage}.
  */
+@Deprecated
 public class GenericTrackedEventMessage<T> extends GenericEventMessage<T> implements TrackedEventMessage<T> {
-    private static final long serialVersionUID = -8955035317050776846L;
+
     private final TrackingToken trackingToken;
 
     /**
@@ -59,7 +63,7 @@ public class GenericTrackedEventMessage<T> extends GenericEventMessage<T> implem
      * given message will be used supply the payload, metadata and identifier of the resulting event message.
      *
      * @param trackingToken the tracking token of the resulting message
-     * @param delegate      the message that will be used used as delegate
+     * @param delegate      the message that will be used as delegate
      * @param timestamp     the timestamp of the resulting event message
      */
     protected GenericTrackedEventMessage(TrackingToken trackingToken, Message<T> delegate, Instant timestamp) {

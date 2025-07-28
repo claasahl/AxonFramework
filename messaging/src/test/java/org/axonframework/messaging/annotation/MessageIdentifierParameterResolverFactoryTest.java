@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,10 @@ package org.axonframework.messaging.annotation;
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.GenericCommandMessage;
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.eventhandling.EventTestUtils;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Method;
@@ -59,32 +62,37 @@ class MessageIdentifierParameterResolverFactoryTest {
     }
 
     @Test
-    void testResolvesToMessageIdentifierWhenAnnotatedForEventMessage() {
+    void resolvesToMessageIdentifierWhenAnnotatedForEventMessage() {
         ParameterResolver<String> resolver =
                 testSubject.createInstance(messageIdentifierMethod, messageIdentifierMethod.getParameters(), 0);
-        final EventMessage<Object> eventMessage = GenericEventMessage.asEventMessage("test");
-        assertTrue(resolver.matches(eventMessage));
-        assertEquals(eventMessage.getIdentifier(), resolver.resolveParameterValue(eventMessage));
+        assertNotNull(resolver);
+        final EventMessage<Object> eventMessage = EventTestUtils.asEventMessage("test");
+        ProcessingContext context = StubProcessingContext.forMessage(eventMessage);
+        assertTrue(resolver.matches(context));
+        assertEquals(eventMessage.getIdentifier(), resolver.resolveParameterValue(context));
     }
 
     @Test
-    void testResolvesToMessageIdentifierWhenAnnotatedForCommandMessage() {
+    void resolvesToMessageIdentifierWhenAnnotatedForCommandMessage() {
         ParameterResolver<String> resolver =
                 testSubject.createInstance(messageIdentifierMethod, messageIdentifierMethod.getParameters(), 0);
-        CommandMessage<Object> commandMessage = GenericCommandMessage.asCommandMessage("test");
-        assertTrue(resolver.matches(commandMessage));
-        assertEquals(commandMessage.getIdentifier(), resolver.resolveParameterValue(commandMessage));
+        assertNotNull(resolver);
+        CommandMessage<Object> commandMessage =
+                new GenericCommandMessage<>(new MessageType("command"), "test");
+        ProcessingContext context = StubProcessingContext.forMessage(commandMessage);
+        assertTrue(resolver.matches(context));
+        assertEquals(commandMessage.getIdentifier(), resolver.resolveParameterValue(context));
     }
 
     @Test
-    void testIgnoredWhenNotAnnotated() {
+    void ignoredWhenNotAnnotated() {
         ParameterResolver<String> resolver =
                 testSubject.createInstance(nonAnnotatedMethod, nonAnnotatedMethod.getParameters(), 0);
         assertNull(resolver);
     }
 
     @Test
-    void testIgnoredWhenWrongType() {
+    void ignoredWhenWrongType() {
         ParameterResolver<String> resolver =
                 testSubject.createInstance(integerMethod, integerMethod.getParameters(), 0);
         assertNull(resolver);

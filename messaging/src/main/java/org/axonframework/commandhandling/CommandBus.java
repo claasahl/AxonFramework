@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,64 +16,43 @@
 
 package org.axonframework.commandhandling;
 
-import org.axonframework.common.Registration;
-import org.axonframework.messaging.MessageDispatchInterceptorSupport;
-import org.axonframework.messaging.MessageHandler;
-import org.axonframework.messaging.MessageHandlerInterceptorSupport;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import org.axonframework.common.infra.DescribableComponent;
+import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.QualifiedName;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
- * The mechanism that dispatches Command objects to their appropriate CommandHandler. CommandHandlers can subscribe and
- * unsubscribe to specific commands (identified by their {@link CommandMessage#getCommandName() name}) on the command
- * bus. Only a single handler may be subscribed for a single command name at any time.
+ * The mechanism that dispatches {@link CommandMessage commands} to their appropriate
+ * {@link CommandHandler command handler}.
+ * <p>
+ * Command handlers can {@link #subscribe(QualifiedName, CommandHandler) subscribe} and unsubscribe to specific commands
+ * on the command bus. A command being {@link #dispatch(CommandMessage, ProcessingContext) dispatched} matches a command
+ * handler based on the {@link QualifiedName} present in the {@link CommandMessage#type() command's type}.
+ * <p>
+ * Only a <em>single</em> handler may be subscribed for a given command name at any time.
  *
  * @author Allard Buijze
  * @since 0.5
  */
-public interface CommandBus extends MessageHandlerInterceptorSupport<CommandMessage<?>>,
-        MessageDispatchInterceptorSupport<CommandMessage<?>> {
+public interface CommandBus extends CommandHandlerRegistry<CommandBus>, DescribableComponent {
 
     /**
-     * Dispatch the given {@code command} to the CommandHandler subscribed to the given {@code command}'s name. No
-     * feedback is given about the status of the dispatching process. Implementations may return immediately after
-     * asserting a valid handler is registered for the given command.
+     * Dispatch the given {@code command} to the {@link CommandHandler command handler}
+     * {@link #subscribe(QualifiedName, CommandHandler) subscribed} to the given {@code command}'s name. The name is
+     * typically deferred from the {@link Message#type()}, which contains a {@link MessageType#qualifiedName()}.
      *
-     * @param <C>     The payload type of the command to dispatch
-     * @param command The Command to dispatch
-     * @throws NoHandlerForCommandException when no command handler is registered for the given {@code command}'s name.
-     * @see GenericCommandMessage#asCommandMessage(Object)
+     * @param command           The command to dispatch.
+     * @param processingContext The processing context under which the command is being published (can be
+     *                          {@code null}).
+     * @return The {@code CompletableFuture} providing the result of the command, once finished.
+     * @throws NoHandlerForCommandException when no {@link CommandHandler command handler} is registered for the given
+     *                                      {@code command}'s name.
      */
-    <C> void dispatch(CommandMessage<C> command);
-
-    /**
-     * Dispatch the given {@code command} to the CommandHandler subscribed to the given {@code command}'s name. When the
-     * command is processed, one of the callback's methods is called, depending on the result of the processing.
-     * <p/>
-     * When the method returns, the only guarantee provided by the CommandBus implementation is that the command has
-     * been successfully received. Implementations are highly recommended to perform basic validation of the command
-     * before returning from this method call.
-     * <p/>
-     * Implementations must start a UnitOfWork when before dispatching the command, and either commit or rollback after
-     * a successful or failed execution, respectively.
-     *
-     * @param command  The Command to dispatch
-     * @param callback The callback to invoke when command processing is complete
-     * @param <C>      The payload type of the command to dispatch
-     * @param <R>      The type of the expected result
-     * @throws NoHandlerForCommandException when no command handler is registered for the given {@code command}.
-     * @see GenericCommandMessage#asCommandMessage(Object)
-     */
-    <C, R> void dispatch(CommandMessage<C> command, CommandCallback<? super C, ? super R> callback);
-
-    /**
-     * Subscribe the given {@code handler} to commands with the given {@code commandName}.
-     * <p/>
-     * If a subscription already exists for the given name, the behavior is undefined. Implementations may throw an
-     * Exception to refuse duplicate subscription or alternatively decide whether the existing or new {@code handler}
-     * gets the subscription.
-     *
-     * @param commandName The name of the command to subscribe the handler to
-     * @param handler     The handler instance that handles the given type of command
-     * @return a handle to unsubscribe the {@code handler}. When unsubscribed it will no longer receive commands.
-     */
-    Registration subscribe(String commandName, MessageHandler<? super CommandMessage<?>> handler);
+    CompletableFuture<CommandResultMessage<?>> dispatch(@Nonnull CommandMessage<?> command,
+                                                        @Nullable ProcessingContext processingContext);
 }

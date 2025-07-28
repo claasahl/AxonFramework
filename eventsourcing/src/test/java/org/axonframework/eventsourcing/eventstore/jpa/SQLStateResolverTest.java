@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SQLStateResolverTest {
 
     @Test
-    void testDefaultResolver_duplicateKeyException() {
+    void defaultResolver_duplicateKeyException() {
         SQLStateResolver resolver = new SQLStateResolver();
 
         boolean isDuplicateKey = resolver.isDuplicateKeyViolation(duplicateKeyException());
@@ -38,7 +38,7 @@ class SQLStateResolverTest {
     }
 
     @Test
-    void testDefaultResolver_integrityConstraintViolated() {
+    void defaultResolver_integrityConstraintViolated() {
         SQLStateResolver resolver = new SQLStateResolver();
 
         boolean isDuplicateKey = resolver.isDuplicateKeyViolation(integrityContraintViolation());
@@ -47,7 +47,7 @@ class SQLStateResolverTest {
     }
 
     @Test
-    void testExplicitResolver_duplicateKeyException() {
+    void explicitResolver_duplicateKeyException() {
         SQLStateResolver resolver = new SQLStateResolver("23505");
 
         boolean isDuplicateKey = resolver.isDuplicateKeyViolation(duplicateKeyException());
@@ -57,7 +57,7 @@ class SQLStateResolverTest {
 
 
     @Test
-    void testExplicitResolver_integrityConstraintViolated() {
+    void explicitResolver_integrityConstraintViolated() {
         SQLStateResolver resolver = new SQLStateResolver("23505");
 
         boolean isDuplicateKey = resolver.isDuplicateKeyViolation(integrityContraintViolation());

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,9 +67,7 @@ public abstract class IdentifierFactory {
             logger.debug("Found IdentifierFactory implementation using the {} Class Loader", classLoaderName);
             found = services.next();
             if (services.hasNext()) {
-                logger.warn("More than one IdentifierFactory implementation was found using the {} "
-                                    + "Class Loader. This may result in different selections being made after "
-                                    + "restart of the application.", classLoaderName);
+                logger.warn("More than one IdentifierFactory implementation was found using the {} Class Loader. This may result in different selections being made after restart of the application.", classLoaderName);
             }
         }
         return found;

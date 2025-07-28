@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,13 @@
 
 package org.axonframework.test.aggregate;
 
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.EventBus;
 import org.axonframework.eventsourcing.EventSourcingHandler;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,13 +56,16 @@ class AnnotatedAggregate implements AnnotatedAggregateInterface {
     }
 
     @CommandHandler
-    public AnnotatedAggregate(CreateAggregateCommand command, EventBus eventBus, HardToCreateResource resource) {
+    @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+    public void handle(CreateAggregateCommand command, EventBus eventBus, HardToCreateResource resource) {
         assertNotNull(resource, "resource should not be null");
         assertNotNull(eventBus, "Expected EventBus to be injected as resource");
 
-        apply(new MyEvent(
-                command.getAggregateIdentifier() == null ? UUID.randomUUID() : command.getAggregateIdentifier(), 0
-        ));
+        if (command.shouldPublishEvents()) {
+            apply(new MyEvent(
+                    command.getAggregateIdentifier() == null ? UUID.randomUUID() : command.getAggregateIdentifier(), 0
+            ));
+        }
     }
 
     @CommandHandler
@@ -103,7 +108,7 @@ class AnnotatedAggregate implements AnnotatedAggregateInterface {
     @EventSourcingHandler
     public void handleAll(DomainEventMessage<?> event) {
         // We don't care about events
-        logger.debug("Invoked with payload: " + event.getPayloadType().getName());
+        logger.debug("Invoked with payload: {}", event.getPayloadType().getName());
     }
 
     @Override

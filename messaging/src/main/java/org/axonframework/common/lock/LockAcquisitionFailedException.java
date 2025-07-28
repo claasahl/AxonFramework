@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,6 @@ import org.axonframework.common.AxonTransientException;
  * @since 2.0
  */
 public class LockAcquisitionFailedException extends AxonTransientException {
-
-    private static final long serialVersionUID = 4453369833513201587L;
 
     /**
      * Initialize the exception with given {@code message} and {@code cause}

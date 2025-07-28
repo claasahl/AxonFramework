@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,14 +27,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class MavenArtifactRevisionResolverTest {
 
     @Test
-    void testFindVersionOfExistingPomProperties() throws Exception {
+    void findVersionOfExistingPomProperties() throws Exception {
         MavenArtifactRevisionResolver testSubject = new MavenArtifactRevisionResolver("org.axonframework", "axon-modelling");
 
         assertEquals("2.1-SNAPSHOT", testSubject.revisionOf(Object.class));
     }
 
     @Test
-    void testFindVersionOfNonExistingProperties() throws Exception {
+    void findVersionOfNonExistingProperties() throws Exception {
         MavenArtifactRevisionResolver testSubject = new MavenArtifactRevisionResolver("does.not.exist", "axon-modelling");
 
         assertNull(testSubject.revisionOf(Object.class));

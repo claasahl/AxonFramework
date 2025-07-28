@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,12 +16,13 @@
 
 package org.axonframework.integrationtests.polymorphic;
 
-import org.axonframework.commandhandling.CommandHandler;
-import org.axonframework.eventhandling.EventHandler;
+import jakarta.persistence.Entity;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.eventsourcing.EventSourcingHandler;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.CommandHandlerInterceptor;
-
-import javax.persistence.Entity;
+import org.axonframework.modelling.command.CreationPolicy;
 
 import static org.axonframework.modelling.command.AggregateLifecycle.apply;
 
@@ -37,7 +38,8 @@ public class Child1Aggregate extends ParentAggregate {
     }
 
     @CommandHandler
-    public Child1Aggregate(CreateChild1Command cmd) {
+    @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+    public void handle(CreateChild1Command cmd) {
         apply(new CreatedEvent(cmd.getId()));
     }
 

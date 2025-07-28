@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class SerializedMetaDataValueTest {
 
     @Test
-    void testSerializeMetaData() {
+    void serializeMetaData() {
         byte[] stubData = new byte[]{};
         SerializedMetaData<byte[]> serializedMetaData = new SerializedMetaData<>(stubData, byte[].class);
         assertEquals(stubData, serializedMetaData.getData());
@@ -37,7 +37,7 @@ class SerializedMetaDataValueTest {
     }
 
     @Test
-    void testIsSerializedMetaData() {
+    void isSerializedMetaData() {
         SerializedMetaData<byte[]> serializedMetaData = new SerializedMetaData<>(new byte[]{}, byte[].class);
         assertTrue(SerializedMetaData.isSerializedMetaData(serializedMetaData));
         assertFalse(SerializedMetaData.isSerializedMetaData(

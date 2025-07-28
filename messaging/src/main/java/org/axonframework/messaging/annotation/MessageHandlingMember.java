@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,16 @@
 
 package org.axonframework.messaging.annotation;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import org.axonframework.messaging.GenericMessage;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageStream;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Member;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -58,10 +62,11 @@ public interface MessageHandlingMember<T> {
     /**
      * Checks if this handler is capable of handling the given {@code message}.
      *
-     * @param message The message that is to be handled
-     * @return {@code true} if the handler is capable of handling the message, {@code false} otherwise
+     * @param message           The message that is to be handled.
+     * @param context           The context in which the message is being handled.
+     * @return {@code true} if the handler is capable of handling the message, {@code false} otherwise.
      */
-    boolean canHandle(Message<?> message);
+    boolean canHandle(@Nonnull Message<?> message, @Nonnull ProcessingContext context);
 
     /**
      * Checks if this handler is capable of handling messages with the given {@code payloadType}.
@@ -69,7 +74,7 @@ public interface MessageHandlingMember<T> {
      * @param payloadType The payloadType of a message that is to be handled
      * @return {@code true} if the handler is capable of handling the message with given type, {@code false} otherwise
      */
-    default boolean canHandleType(Class<?> payloadType) {
+    default boolean canHandleType(@Nonnull Class<?> payloadType) {
         return true;
     }
 
@@ -84,20 +89,38 @@ public interface MessageHandlingMember<T> {
      * @return {@code true} if this handler can handle the given {@code messageType}, {@code false} otherwise
      */
     @SuppressWarnings("rawtypes")
-    boolean canHandleMessageType(Class<? extends Message> messageType);
+    boolean canHandleMessageType(@Nonnull Class<? extends Message> messageType);
 
     /**
      * Handles the given {@code message} by invoking the appropriate method on given {@code target}. This may result in
      * an exception if the given target is not capable of handling the message or if an exception is thrown during
      * invocation of the method.
      *
-     * @param message The message to handle
-     * @param target  The target to handle the message
-     * @return The message handling result in case the invocation was successful
+     * @param message The message to handle.
+     * @param context The context in which the message is being handled.
+     * @param target  The target to handle the message.
+     * @return The message handling result in case the invocation was successful.
      * @throws Exception when there was a problem that prevented invocation of the method or if an exception was thrown
-     *                   from the invoked method
+     *                   from the invoked method.
      */
-    Object handle(Message<?> message, T target) throws Exception;
+    @Deprecated
+    Object handleSync(@Nonnull Message<?> message, @Nonnull ProcessingContext context, @Nullable T target)
+            throws Exception;
+
+    /**
+     * TODO add documentation
+     */
+    default MessageStream<?> handle(@Nonnull Message<?> message,
+                                    @Nonnull ProcessingContext context,
+                                    @Nullable T target) {
+        try {
+            // TODO: 24-11-2023 proper impl
+            Object result = handleSync(message, context, target);
+            return MessageStream.just(new GenericMessage<>(new MessageType(result.getClass()), result));
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
 
     /**
      * Returns the wrapped handler object if its type is an instance of the given {@code handlerType}. For instance, if
@@ -136,21 +159,18 @@ public interface MessageHandlingMember<T> {
     }
 
     /**
-     * Checks whether the method of the target entity contains the given {@code annotationType}.
+     * Retrieve a single attributes for the given {@code attributeKey}. If this {@link MessageHandlingMember} does not
+     * hold a value referencing the {@code attributeKey}, an {@link Optional#empty()} is returned. Otherwise, a
+     * non-empty {@link Optional} containing the attribute will be provided.
+     * <p>
+     * When using the method, consider checking the {@link org.axonframework.messaging.HandlerAttributes} for a list of
+     * common handler attributes.
      *
-     * @param annotationType Annotation to check for on the target method
-     * @return {@code true} if the annotation is present on the target method, {@code false} otherwise
+     * @param attributeKey the key to retrieve an attribute for
+     * @return a non-empty {@link Optional} of the attribute referencing the given {@code attributeKey}. Otherwise, an
+     * {@link Optional#empty()} will be returned
      */
-    boolean hasAnnotation(Class<? extends Annotation> annotationType);
-
-    /**
-     * Get the attributes of an annotation of given {@code annotationType} on the method of the target entity. If the
-     * annotation is present on the target method an Optional is returned containing the properties mapped by their
-     * name. If the annotation is not present an empty Optional is returned.
-     *
-     * @param annotationType The annotation to check for on the target method
-     * @return An optional containing a map of the properties of the annotation, or an empty optional if the annotation
-     * is missing on the method
-     */
-    Optional<Map<String, Object>> annotationAttributes(Class<? extends Annotation> annotationType);
+    default <R> Optional<R> attribute(String attributeKey) {
+        return Optional.empty();
+    }
 }

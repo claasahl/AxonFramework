@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,19 +16,15 @@
 
 package org.axonframework.springboot;
 
-import org.axonframework.config.TagsConfiguration;
-import org.axonframework.springboot.autoconfig.AxonServerAutoConfiguration;
+import org.axonframework.axonserver.connector.TagsConfiguration;
+import org.axonframework.springboot.utils.GrpcServerStub;
+import org.axonframework.springboot.utils.TcpUtils;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration;
-import org.springframework.boot.autoconfigure.web.reactive.function.client.WebClientAutoConfiguration;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.annotation.EnableMBeanExport;
-import org.springframework.jmx.support.RegistrationPolicy;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.ContextConfiguration;
 
 import java.util.Map;
 
@@ -39,27 +35,52 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Milan Savic
  */
-@ExtendWith(SpringExtension.class)
-@EnableAutoConfiguration(exclude = {
-        JmxAutoConfiguration.class,
-        WebClientAutoConfiguration.class,
-        AxonServerAutoConfiguration.class
-})
-@EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
-@TestPropertySource("classpath:test.tags.application.properties")
+@Disabled("TODO #3496")
 class AxonAutoConfigurationWithTagsTest {
 
-    @Autowired
-    private ApplicationContext applicationContext;
+    private ApplicationContextRunner testContext;
+
+    @BeforeEach
+    void setUp() {
+        testContext = new ApplicationContextRunner();
+    }
+
+    @BeforeAll
+    static void beforeAll() {
+        System.setProperty("axon.axonserver.servers", GrpcServerStub.DEFAULT_HOST + ":" + TcpUtils.findFreePort());
+    }
+
+    @AfterAll
+    static void afterAll() {
+        System.clearProperty("axon.axonserver.servers");
+    }
 
     @Test
-    void testConfig() {
-        TagsConfiguration tagsConfiguration = applicationContext.getBean(TagsConfiguration.class);
-        assertNotNull(tagsConfiguration);
-        Map<String, String> tags = tagsConfiguration.getTags();
-        assertEquals(3, tags.size());
-        assertEquals("Eu", tags.get("region"));
-        assertEquals("It", tags.get("country"));
-        assertEquals("Rome", tags.get("city"));
+    void tagPropertiesAreCapturedInTagConfiguration() {
+        testContext.withUserConfiguration(TestContext.class)
+                   .withPropertyValues(
+                           "axon.tags.region=Eu",
+                           "axon.tags.country=It",
+                           "axon.tags.city=Rome"
+                   )
+                   .run(context -> {
+                       TagsConfiguration tagsConfiguration = context.getBean(TagsConfiguration.class);
+                       assertNotNull(tagsConfiguration);
+                       Map<String, String> tags = tagsConfiguration.getTags();
+                       assertEquals(3, tags.size());
+                       assertEquals("Eu", tags.get("region"));
+                       assertEquals("It", tags.get("country"));
+                       assertEquals("Rome", tags.get("city"));
+                   });
+    }
+
+    @ContextConfiguration
+    @EnableAutoConfiguration
+    private static class TestContext {
+
+        @Bean(initMethod = "start", destroyMethod = "shutdown")
+        public GrpcServerStub grpcServerStub(@Value("${axon.axonserver.servers}") String servers) {
+            return new GrpcServerStub(Integer.parseInt(servers.split(":")[1]));
+        }
     }
 }

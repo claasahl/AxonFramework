@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.axonframework.queryhandling.annotation;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.common.Registration;
 import org.axonframework.messaging.MessageHandler;
 import org.axonframework.messaging.annotation.AnnotatedHandlerInspector;
@@ -23,27 +24,26 @@ import org.axonframework.messaging.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.axonframework.queryhandling.NoHandlerForQueryException;
 import org.axonframework.queryhandling.QueryBus;
-import org.axonframework.queryhandling.QueryHandler;
 import org.axonframework.queryhandling.QueryHandlerAdapter;
 import org.axonframework.queryhandling.QueryMessage;
+import org.axonframework.queryhandling.QueryResponseMessage;
 
 import java.util.Collection;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Adapter that turns any {@link QueryHandler @QueryHandler} annotated bean into a {@link
- * MessageHandler} implementation. Each annotated method is subscribed
- * as a QueryHandler at the {@link QueryBus} for the query type specified by the parameter/return type of that method.
+ * Adapter that turns any {@link QueryHandler @QueryHandler} annotated bean into a {@link MessageHandler}
+ * implementation. Each annotated method is subscribed as a QueryHandler at the {@link QueryBus} for the query type
+ * specified by the parameter/return type of that method.
  *
  * @author Marc Gathier
  * @since 3.1
  */
-public class AnnotationQueryHandlerAdapter<T> implements QueryHandlerAdapter,
-        MessageHandler<QueryMessage<?, ?>> {
+public class AnnotationQueryHandlerAdapter<T> implements QueryHandlerAdapter, MessageHandler<QueryMessage<?, ?>, QueryResponseMessage<?>> {
 
     private final T target;
     private final AnnotatedHandlerInspector<T> model;
@@ -51,18 +51,18 @@ public class AnnotationQueryHandlerAdapter<T> implements QueryHandlerAdapter,
     /**
      * Initializes the adapter, forwarding call to the given {@code target}.
      *
-     * @param target The instance with {@link QueryHandler} annotated methods
+     * @param target the instance with {@link QueryHandler} annotated methods
      */
     public AnnotationQueryHandlerAdapter(T target) {
         this(target, ClasspathParameterResolverFactory.forClass(target.getClass()));
     }
 
     /**
-     * Initializes the adapter, forwarding call to the given {@code target}, resolving parameters using the given
-     * {@code parameterResolverFactory}.
+     * Initializes the adapter, forwarding call to the given {@code target}, resolving parameters using the given {@code
+     * parameterResolverFactory}.
      *
-     * @param target                   The instance with {@link QueryHandler} annotated methods
-     * @param parameterResolverFactory The parameter resolver factory to resolve handler parameters with
+     * @param target                   the instance with {@link QueryHandler} annotated methods
+     * @param parameterResolverFactory the parameter resolver factory to resolve handler parameters with
      */
     public AnnotationQueryHandlerAdapter(T target, ParameterResolverFactory parameterResolverFactory) {
         this(target,
@@ -71,15 +71,16 @@ public class AnnotationQueryHandlerAdapter<T> implements QueryHandlerAdapter,
     }
 
     /**
-     * Initializes the adapter, forwarding call to the given {@code target}, resolving parameters using the given
-     * {@code parameterResolverFactory} and creating handlers using {@code handlerDefinition}.
+     * Initializes the adapter, forwarding call to the given {@code target}, resolving parameters using the given {@code
+     * parameterResolverFactory} and creating handlers using {@code handlerDefinition}.
      *
-     * @param target                   The instance with {@link QueryHandler} annotated methods
-     * @param parameterResolverFactory The parameter resolver factory to resolve handler parameters with
-     * @param handlerDefinition        The handler definition used to create concrete handlers
+     * @param target                   the instance with {@link QueryHandler} annotated methods
+     * @param parameterResolverFactory the parameter resolver factory to resolve handler parameters with
+     * @param handlerDefinition        the handler definition used to create concrete handlers
      */
     @SuppressWarnings("unchecked")
-    public AnnotationQueryHandlerAdapter(T target, ParameterResolverFactory parameterResolverFactory,
+    public AnnotationQueryHandlerAdapter(T target,
+                                         ParameterResolverFactory parameterResolverFactory,
                                          HandlerDefinition handlerDefinition) {
         this.model = AnnotatedHandlerInspector.inspectType((Class<T>) target.getClass(),
                                                            parameterResolverFactory,
@@ -87,39 +88,40 @@ public class AnnotationQueryHandlerAdapter<T> implements QueryHandlerAdapter,
         this.target = target;
     }
 
-    public Registration subscribe(QueryBus queryBus) {
-        Collection<Registration> registrationList = model.getHandlers().stream()
-                                                         .map(m -> subscribe(queryBus, m))
-                                                         .filter(Objects::nonNull)
-                                                         .collect(Collectors.toList());
-        return () -> registrationList.stream().map(Registration::cancel)
-                                     .reduce(Boolean::logicalOr)
-                                     .orElse(false);
+    @Override
+    public Registration subscribe(@Nonnull QueryBus queryBus) {
+        Collection<Registration> registrations = model.getHandlers(target.getClass())
+                                                      .map(handler -> handler.unwrap(QueryHandlingMember.class))
+                                                      .filter(Optional::isPresent)
+                                                      .map(Optional::get)
+                                                      .map(queryHandler -> queryBus.subscribe(
+                                                              queryHandler.getQueryName(),
+                                                              queryHandler.getResultType(),
+                                                              this
+                                                      ))
+                                                      .collect(Collectors.toList());
+
+        return () -> registrations.stream()
+                                  .map(Registration::cancel)
+                                  .reduce(Boolean::logicalOr)
+                                  .orElse(false);
     }
 
     @Override
-    public Object handle(QueryMessage<?, ?> message) throws Exception {
+    public Object handleSync(@Nonnull QueryMessage<?, ?> message, @Nonnull ProcessingContext context) throws Exception {
         MessageHandlingMember<? super T> handler =
-                model.getHandlers(target.getClass()).filter(m -> m.canHandle(message))
+                model.getHandlers(target.getClass())
+                     .filter(m -> m.canHandle(message, context))
                      .findFirst()
-                     .orElseThrow(() -> new NoHandlerForQueryException("No suitable handler was found for the query of type "
-                                                                               + message.getPayloadType().getName()));
-        return model.chainedInterceptor(target.getClass()).handle(message, target, handler);
+                     .orElseThrow(() -> new NoHandlerForQueryException(message));
+
+        return model.chainedInterceptor(target.getClass())
+                    .handleSync(message, context, target, handler);
     }
 
     @Override
-    public boolean canHandle(QueryMessage<?, ?> message) {
-        return model.getHandlers().stream().anyMatch(h -> h.canHandle(message));
-    }
-
-    @SuppressWarnings("unchecked")
-    private Registration subscribe(QueryBus queryBus, MessageHandlingMember<? super T> m) {
-        Optional<QueryHandlingMember> unwrappedQueryMember = m.unwrap(QueryHandlingMember.class);
-        if (unwrappedQueryMember.isPresent()) {
-            QueryHandlingMember qhm = unwrappedQueryMember.get();
-            return queryBus.subscribe(qhm.getQueryName(), qhm.getResultType(), this);
-        }
-
-        return null;
+    public boolean canHandle(@Nonnull QueryMessage<?, ?> message, @Nonnull ProcessingContext context) {
+        return model.getHandlers(target.getClass())
+                    .anyMatch(handlingMember -> handlingMember.canHandle(message, context));
     }
 }

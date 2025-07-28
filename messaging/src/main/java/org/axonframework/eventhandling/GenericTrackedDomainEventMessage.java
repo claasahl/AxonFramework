@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,15 +21,21 @@ import org.axonframework.messaging.Message;
 import java.time.Instant;
 import java.util.Map;
 import java.util.function.Supplier;
+import jakarta.annotation.Nonnull;
 
 /**
  * Generic implementation of a {@link DomainEventMessage} that is also a {@link TrackedEventMessage}.
  *
  * @param <T> The type of payload contained in this Message
+ * @deprecated In favor of pairing the {@link TrackingToken} through the
+ * {@link org.axonframework.messaging.MessageStream.Entry} its {@link org.axonframework.messaging.Context} with an
+ * {@link EventMessage}.
  */
-public class GenericTrackedDomainEventMessage<T> extends GenericDomainEventMessage<T> implements
-                                                                                      TrackedEventMessage<T> {
-    private static final long serialVersionUID = 6211645167637822558L;
+@Deprecated
+public class GenericTrackedDomainEventMessage<T>
+        extends GenericDomainEventMessage<T>
+        implements TrackedEventMessage<T> {
+
     private final TrackingToken trackingToken;
 
     /**
@@ -82,14 +88,14 @@ public class GenericTrackedDomainEventMessage<T> extends GenericDomainEventMessa
     }
 
     @Override
-    public GenericTrackedDomainEventMessage<T> withMetaData(Map<String, ?> metaData) {
+    public GenericTrackedDomainEventMessage<T> withMetaData(@Nonnull Map<String, String> metaData) {
         return new GenericTrackedDomainEventMessage<>(trackingToken, getType(), getAggregateIdentifier(),
                                                       getSequenceNumber(), getDelegate().withMetaData(metaData),
                                                       getTimestamp());
     }
 
     @Override
-    public GenericTrackedDomainEventMessage<T> andMetaData(Map<String, ?> metaData) {
+    public GenericTrackedDomainEventMessage<T> andMetaData(@Nonnull Map<String, String> metaData) {
         return new GenericTrackedDomainEventMessage<>(trackingToken, getType(), getAggregateIdentifier(),
                                                       getSequenceNumber(), getDelegate().andMetaData(metaData),
                                                       getTimestamp());

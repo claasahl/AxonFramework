@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,38 +16,33 @@
 
 package org.axonframework.springboot;
 
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.commandhandling.gateway.CommandGateway;
 import org.axonframework.common.transaction.TransactionManager;
-import org.axonframework.eventhandling.EventHandler;
+import org.axonframework.eventhandling.annotation.EventHandler;
 import org.axonframework.eventsourcing.AggregateSnapshotter;
 import org.axonframework.eventsourcing.EventCountSnapshotTriggerDefinition;
 import org.axonframework.eventsourcing.GenericAggregateFactory;
 import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
 import org.axonframework.eventsourcing.Snapshotter;
-import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.jpa.JpaEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.eventstore.jpa.LegacyJpaEventStorageEngine;
 import org.axonframework.eventsourcing.snapshotting.SnapshotFilter;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.modelling.command.AggregateLifecycle;
+import org.axonframework.modelling.command.CreationPolicy;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.spring.stereotype.Aggregate;
-import org.axonframework.springboot.autoconfig.AxonServerAutoConfiguration;
 import org.axonframework.springboot.utils.TestSerializer;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.context.ApplicationContext;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.EnableMBeanExport;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jmx.support.RegistrationPolicy;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -59,63 +54,71 @@ import static org.mockito.Mockito.*;
  *
  * @author Steven van Beelen
  */
-@ContextConfiguration(classes = JpaEventStoreAutoConfigurationWithSnapshottingTest.TestContext.class)
-@ExtendWith(SpringExtension.class)
-@EnableAutoConfiguration(exclude = {AxonServerAutoConfiguration.class})
-@EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
 class JpaEventStoreAutoConfigurationWithSnapshottingTest {
 
     private static final String AGGREGATE_ID = "some-aggregate";
 
-    @Autowired
-    private ApplicationContext applicationContext;
-    @Autowired
-    private CommandGateway commandGateway;
-    @Autowired
-    private EventStore eventStore;
+    private ApplicationContextRunner testContext;
 
     @BeforeEach
     void setUp() {
         TestContext.SNAPSHOT_FILTER_INVOKED.set(false);
+        testContext = new ApplicationContextRunner()
+                .withPropertyValues("axon.axonserver.enabled=false")
+                .withUserConfiguration(TestContext.class);
     }
 
     @Test
-    void testSnapshotterAndSnapshotTriggerDefinitionAreInvoked() {
-        SnapshotTriggerDefinition snapshotTriggerDefinition =
-                applicationContext.getBean(SnapshotTriggerDefinition.class);
-        assertNotNull(snapshotTriggerDefinition);
-        Snapshotter snapshotter = applicationContext.getBean(Snapshotter.class);
-        assertNotNull(snapshotter);
-        assertNotNull(applicationContext.getBean(JpaEventStorageEngine.class));
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void snapshotterAndSnapshotTriggerDefinitionAreInvoked() {
+        testContext.run(context -> {
+            SnapshotTriggerDefinition snapshotTriggerDefinition =
+                    context.getBean(SnapshotTriggerDefinition.class);
+            assertNotNull(snapshotTriggerDefinition);
+            Snapshotter snapshotter = context.getBean(Snapshotter.class);
+            assertNotNull(snapshotter);
+            assertNotNull(context.getBean(LegacyJpaEventStorageEngine.class));
 
-        commandGateway.send(new TestContext.CreateCommand(AGGREGATE_ID));
-        commandGateway.send(new TestContext.UpdateCommand(AGGREGATE_ID));
+            CommandGateway commandGateway = context.getBean(CommandGateway.class);
+            commandGateway.send(new TestContext.CreateCommand(AGGREGATE_ID), null)
+                          .getResultMessage().get();
+            commandGateway.send(new TestContext.UpdateCommand(AGGREGATE_ID), null)
+                          .getResultMessage().get();
 
-        verify(snapshotTriggerDefinition, atLeastOnce()).prepareTrigger(TestContext.TestAggregate.class);
-        verify(snapshotter, atLeastOnce()).scheduleSnapshot(TestContext.TestAggregate.class, AGGREGATE_ID);
+            verify(snapshotTriggerDefinition, atLeastOnce()).prepareTrigger(TestContext.TestAggregate.class);
+            verify(snapshotter, atLeastOnce()).scheduleSnapshot(TestContext.TestAggregate.class, AGGREGATE_ID);
+        });
     }
 
     @Test
-    void testSnapshotFilterIsInvoked() {
-        SnapshotFilter snapshotFilter = applicationContext.getBean(SnapshotFilter.class);
-        assertNotNull(snapshotFilter);
-        assertNotNull(applicationContext.getBean(JpaEventStorageEngine.class));
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void snapshotFilterIsInvoked() {
+        testContext.run(context -> {
+            SnapshotFilter snapshotFilter = context.getBean(SnapshotFilter.class);
+            assertNotNull(snapshotFilter);
+            assertNotNull(context.getBean(LegacyJpaEventStorageEngine.class));
 
-        commandGateway.send(new TestContext.CreateCommand(AGGREGATE_ID));
-        commandGateway.send(new TestContext.UpdateCommand(AGGREGATE_ID));
+            CommandGateway commandGateway = context.getBean(CommandGateway.class);
+            commandGateway.send(new TestContext.CreateCommand(AGGREGATE_ID), null)
+                          .getResultMessage().get();
+            commandGateway.send(new TestContext.UpdateCommand(AGGREGATE_ID), null)
+                          .getResultMessage().get();
 
-        eventStore.readEvents(AGGREGATE_ID);
+            LegacyEventStore eventStore = context.getBean(LegacyEventStore.class);
+            eventStore.readEvents(AGGREGATE_ID);
 
-        assertTrue(TestContext.SNAPSHOT_FILTER_INVOKED.get());
+            assertTrue(TestContext.SNAPSHOT_FILTER_INVOKED.get());
+        });
     }
 
     @Configuration
+    @EnableAutoConfiguration
     protected static class TestContext {
 
         protected static final AtomicBoolean SNAPSHOT_FILTER_INVOKED = new AtomicBoolean(false);
 
         @Bean
-        public Snapshotter snapshotter(EventStore eventStore, TransactionManager transactionManager) {
+        public Snapshotter snapshotter(LegacyEventStore eventStore, TransactionManager transactionManager) {
             return spy(AggregateSnapshotter.builder()
                                            .aggregateFactories(new GenericAggregateFactory<>(TestAggregate.class))
                                            .eventStore(eventStore)
@@ -139,7 +142,7 @@ class JpaEventStoreAutoConfigurationWithSnapshottingTest {
         @Bean
         @Primary
         public Serializer serializer() {
-            return TestSerializer.secureXStreamSerializer();
+            return TestSerializer.xStreamSerializer();
         }
 
         public static class CreateCommand {
@@ -210,7 +213,8 @@ class JpaEventStoreAutoConfigurationWithSnapshottingTest {
             }
 
             @CommandHandler
-            public TestAggregate(CreateCommand command) {
+            @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+            public void handle(CreateCommand command) {
                 AggregateLifecycle.apply(new CreatedEvent(command.getAggregateIdentifier()));
             }
 

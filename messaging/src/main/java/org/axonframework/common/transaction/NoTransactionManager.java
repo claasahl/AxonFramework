@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 package org.axonframework.common.transaction;
+
+import org.axonframework.messaging.unitofwork.ProcessingLifecycle;
 
 /**
  * TransactionManager implementation that does nothing. It's a placeholder implementation for the cases where no
@@ -39,9 +41,16 @@ public enum NoTransactionManager implements TransactionManager {
         return INSTANCE;
     }
 
+
+
     @Override
     public Transaction startTransaction() {
         return TRANSACTION;
+    }
+
+    @Override
+    public void registerHandlers(ProcessingLifecycle processingLifecycle) {
+        // no-op
     }
 
     private static final Transaction TRANSACTION = new Transaction() {

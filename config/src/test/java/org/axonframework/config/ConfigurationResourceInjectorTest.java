@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,33 +16,30 @@
 
 package org.axonframework.config;
 
+import jakarta.inject.Inject;
 import org.axonframework.commandhandling.CommandBus;
 import org.axonframework.commandhandling.gateway.CommandGateway;
-import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.eventstore.inmemory.LegacyInMemoryEventStorageEngine;
+import org.junit.jupiter.api.*;
 
-import javax.inject.Inject;
-
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class ConfigurationResourceInjectorTest {
 
-    private Configuration configuration;
+    private LegacyConfiguration configuration;
     private ConfigurationResourceInjector testSubject;
 
     @BeforeEach
     void setUp() {
-        configuration = DefaultConfigurer.defaultConfiguration()
-                .configureEmbeddedEventStore(c -> new InMemoryEventStorageEngine())
-                .buildConfiguration();
+        configuration = LegacyDefaultConfigurer.defaultConfiguration()
+                                               .configureEmbeddedEventStore(c -> new LegacyInMemoryEventStorageEngine())
+                                               .buildConfiguration();
         testSubject = new ConfigurationResourceInjector(configuration);
     }
 
     @Test
-    void testInjectorHasResource() {
+    void injectorHasResource() {
         Saga saga = new Saga();
         testSubject.injectResources(saga);
 
@@ -61,7 +58,7 @@ public class ConfigurationResourceInjectorTest {
         private String inexistent;
 
         private CommandGateway commandGateway;
-        private EventStore eventStore;
+        private LegacyEventStore eventStore;
 
         @Inject
         public void setCommandGateway(CommandGateway commandGateway) {
@@ -69,7 +66,7 @@ public class ConfigurationResourceInjectorTest {
         }
 
         @Inject
-        public void setEventStore(EventStore eventStore) {
+        public void setEventStore(LegacyEventStore eventStore) {
             this.eventStore = eventStore;
         }
     }

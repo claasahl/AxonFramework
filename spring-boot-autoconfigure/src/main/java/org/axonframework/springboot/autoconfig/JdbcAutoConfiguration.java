@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,60 +20,86 @@ import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.jdbc.UnitOfWorkAwareConnectionProviderWrapper;
 import org.axonframework.common.transaction.TransactionManager;
+import org.axonframework.config.LegacyConfiguration;
 import org.axonframework.eventhandling.EventBus;
+import org.axonframework.eventhandling.deadletter.jdbc.DeadLetterSchema;
+import org.axonframework.eventhandling.deadletter.jdbc.JdbcSequencedDeadLetterQueue;
 import org.axonframework.eventhandling.tokenstore.TokenStore;
 import org.axonframework.eventhandling.tokenstore.jdbc.JdbcTokenStore;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.jdbc.JdbcEventStorageEngine;
+import org.axonframework.eventhandling.tokenstore.jdbc.TokenSchema;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.eventstore.jdbc.EventSchema;
+import org.axonframework.eventsourcing.eventstore.jdbc.LegacyJdbcEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.jdbc.JdbcSQLErrorCodesResolver;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.jdbc.GenericSagaSqlSchema;
 import org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore;
+import org.axonframework.modelling.saga.repository.jdbc.SagaSqlSchema;
 import org.axonframework.serialization.Serializer;
-import org.axonframework.spring.config.AxonConfiguration;
 import org.axonframework.spring.jdbc.SpringDataSourceConnectionProvider;
+import org.axonframework.springboot.EventProcessorProperties;
+import org.axonframework.springboot.TokenStoreProperties;
+import org.axonframework.springboot.util.DeadLetterQueueProviderConfigurerModule;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
 import javax.sql.DataSource;
 
 /**
- * Auto configuration class for Axon's JDBC specific infrastructure components.
+ * Autoconfiguration class for Axon's JDBC specific infrastructure components.
  *
  * @author Allard Buijze
  * @since 3.1
  */
-@Configuration
+@AutoConfiguration
 @ConditionalOnBean(DataSource.class)
-@AutoConfigureAfter(value = {JpaAutoConfiguration.class, JpaEventStoreAutoConfiguration.class})
+@EnableConfigurationProperties(TokenStoreProperties.class)
+@AutoConfigureAfter({JpaAutoConfiguration.class, JpaEventStoreAutoConfiguration.class})
+@AutoConfigureBefore(LegacyAxonAutoConfiguration.class)
 public class JdbcAutoConfiguration {
 
-    @Bean
-    @ConditionalOnMissingBean({EventStorageEngine.class, EventBus.class})
-    public EventStorageEngine eventStorageEngine(Serializer defaultSerializer,
-                                                 PersistenceExceptionResolver persistenceExceptionResolver,
-                                                 @Qualifier("eventSerializer") Serializer eventSerializer,
-                                                 AxonConfiguration configuration,
-                                                 ConnectionProvider connectionProvider,
-                                                 TransactionManager transactionManager) {
-        return JdbcEventStorageEngine.builder()
-                                     .snapshotSerializer(defaultSerializer)
-                                     .upcasterChain(configuration.upcasterChain())
-                                     .persistenceExceptionResolver(persistenceExceptionResolver)
-                                     .eventSerializer(eventSerializer)
-                                     .snapshotFilter(configuration.snapshotFilter())
-                                     .connectionProvider(connectionProvider)
-                                     .transactionManager(transactionManager)
-                                     .build();
+    private final TokenStoreProperties tokenStoreProperties;
+
+    public JdbcAutoConfiguration(TokenStoreProperties tokenStoreProperties) {
+        this.tokenStoreProperties = tokenStoreProperties;
     }
 
     @Bean
-    @ConditionalOnMissingBean({PersistenceExceptionResolver.class, EventStore.class})
+    @ConditionalOnMissingBean({LegacyEventStorageEngine.class, EventSchema.class, LegacyEventStore.class})
+    public EventSchema eventSchema() {
+        return new EventSchema();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean({LegacyEventStorageEngine.class, EventBus.class, LegacyEventStore.class})
+    public LegacyEventStorageEngine eventStorageEngine(Serializer defaultSerializer,
+                                                       PersistenceExceptionResolver persistenceExceptionResolver,
+                                                       @Qualifier("eventSerializer") Serializer eventSerializer,
+                                                       LegacyConfiguration configuration,
+                                                       ConnectionProvider connectionProvider,
+                                                       TransactionManager transactionManager,
+                                                       EventSchema eventSchema) {
+        return LegacyJdbcEventStorageEngine.builder()
+                                           .snapshotSerializer(defaultSerializer)
+                                           .upcasterChain(configuration.upcasterChain())
+                                           .persistenceExceptionResolver(persistenceExceptionResolver)
+                                           .eventSerializer(eventSerializer)
+                                           .snapshotFilter(configuration.snapshotFilter())
+                                           .connectionProvider(connectionProvider)
+                                           .transactionManager(transactionManager)
+                                           .schema(eventSchema)
+                                           .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean({PersistenceExceptionResolver.class, LegacyEventStore.class})
     public PersistenceExceptionResolver jdbcSQLErrorCodesResolver() {
         return new JdbcSQLErrorCodesResolver();
     }
@@ -85,21 +111,71 @@ public class JdbcAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean
-    public TokenStore tokenStore(ConnectionProvider connectionProvider, Serializer serializer) {
+    @ConditionalOnMissingBean({TokenStore.class, TokenSchema.class})
+    public TokenSchema tokenSchema() {
+        return new TokenSchema();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(TokenStore.class)
+    public TokenStore tokenStore(ConnectionProvider connectionProvider, Serializer serializer,
+                                 TokenSchema tokenSchema) {
         return JdbcTokenStore.builder()
                              .connectionProvider(connectionProvider)
+                             .schema(tokenSchema)
                              .serializer(serializer)
+                             .claimTimeout(tokenStoreProperties.getClaimTimeout())
                              .build();
     }
 
     @Bean
-    @ConditionalOnMissingBean(SagaStore.class)
-    public JdbcSagaStore sagaStore(ConnectionProvider connectionProvider, Serializer serializer) {
+    @ConditionalOnMissingBean({SagaStore.class, SagaSqlSchema.class})
+    public JdbcSagaStore sagaStoreNoSchema(ConnectionProvider connectionProvider, Serializer serializer) {
         return JdbcSagaStore.builder()
                             .connectionProvider(connectionProvider)
                             .sqlSchema(new GenericSagaSqlSchema())
                             .serializer(serializer)
                             .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(SagaStore.class)
+    @ConditionalOnBean(SagaSqlSchema.class)
+    public JdbcSagaStore sagaStoreWithSchema(ConnectionProvider connectionProvider, Serializer serializer,
+                                             SagaSqlSchema schema) {
+        return JdbcSagaStore.builder()
+                            .connectionProvider(connectionProvider)
+                            .sqlSchema(schema)
+                            .serializer(serializer)
+                            .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DeadLetterSchema deadLetterSchema() {
+        return DeadLetterSchema.defaultSchema();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DeadLetterQueueProviderConfigurerModule deadLetterQueueProviderConfigurerModule(
+            EventProcessorProperties eventProcessorProperties,
+            ConnectionProvider connectionProvider,
+            TransactionManager transactionManager,
+            DeadLetterSchema schema,
+            @Qualifier("eventSerializer") Serializer eventSerializer,
+            Serializer genericSerializer
+    ) {
+        return new DeadLetterQueueProviderConfigurerModule(
+                eventProcessorProperties,
+                processingGroup -> config -> JdbcSequencedDeadLetterQueue.builder()
+                                                                         .processingGroup(processingGroup)
+                                                                         .connectionProvider(connectionProvider)
+                                                                         .transactionManager(transactionManager)
+                                                                         .schema(schema)
+                                                                         .genericSerializer(genericSerializer)
+                                                                         .eventSerializer(eventSerializer)
+                                                                         .build()
+        );
     }
 }

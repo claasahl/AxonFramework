@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,6 @@ import io.axoniq.axonserver.grpc.query.QueryProviderOutbound;
 import io.axoniq.axonserver.grpc.query.QueryRequest;
 import io.axoniq.axonserver.grpc.query.QueryResponse;
 import io.axoniq.axonserver.grpc.query.QueryUpdate;
-import io.axoniq.axonserver.grpc.query.QueryUpdateComplete;
-import io.axoniq.axonserver.grpc.query.QueryUpdateCompleteExceptionally;
 import io.axoniq.axonserver.grpc.query.SubscriptionQuery;
 import io.axoniq.axonserver.grpc.query.SubscriptionQueryResponse;
 import org.axonframework.axonserver.connector.AxonServerConfiguration;
@@ -39,10 +37,12 @@ import org.axonframework.queryhandling.QueryResponseMessage;
 import org.axonframework.queryhandling.SubscriptionQueryMessage;
 import org.axonframework.queryhandling.SubscriptionQueryUpdateMessage;
 import org.axonframework.serialization.Serializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.util.Map;
-
-import static io.axoniq.axonserver.grpc.query.QueryProviderOutbound.newBuilder;
+import java.util.Optional;
 
 /**
  * Converter between Axon Framework {@link SubscriptionQueryMessage}, the initial {@link QueryResponseMessage} and the
@@ -54,6 +54,8 @@ import static io.axoniq.axonserver.grpc.query.QueryProviderOutbound.newBuilder;
  * @since 4.0
  */
 public class SubscriptionMessageSerializer {
+
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     private final AxonServerConfiguration configuration;
     private final Serializer messageSerializer;
@@ -100,7 +102,7 @@ public class SubscriptionMessageSerializer {
         return QueryRequest.newBuilder()
                            .setTimestamp(System.currentTimeMillis())
                            .setMessageIdentifier(subscriptionQueryMessage.getIdentifier())
-                           .setQuery(subscriptionQueryMessage.getQueryName())
+                           .setQuery(subscriptionQueryMessage.type().name())
                            .setClientId(configuration.getClientId())
                            .setComponentName(configuration.getComponentName())
                            .setPayload(payloadSerializer.apply(subscriptionQueryMessage))
@@ -132,14 +134,17 @@ public class SubscriptionMessageSerializer {
         QueryUpdate.Builder updateMessageBuilder = QueryUpdate.newBuilder();
         if (subscriptionQueryUpdateMessage.isExceptional()) {
             Throwable exceptionResult = subscriptionQueryUpdateMessage.exceptionResult();
-            updateMessageBuilder.setErrorCode(ErrorCode.QUERY_EXECUTION_ERROR.errorCode());
+            updateMessageBuilder.setErrorCode(ErrorCode.getQueryExecutionErrorCode(exceptionResult).errorCode());
             updateMessageBuilder.setErrorMessage(
                     ExceptionSerializer.serialize(configuration.getClientId(), exceptionResult)
             );
-            subscriptionQueryUpdateMessage.exceptionDetails()
-                                          .ifPresent(details -> updateMessageBuilder.setPayload(
-                                                  exceptionDetailsSerializer.apply(details)
-                                          ));
+            Optional<Object> optionalDetails = subscriptionQueryUpdateMessage.exceptionDetails();
+            if (optionalDetails.isPresent()) {
+                updateMessageBuilder.setPayload(exceptionDetailsSerializer.apply(optionalDetails.get()));
+            } else {
+                logger.warn("Serializing exception [{}] without details.", exceptionResult.getClass(), exceptionResult);
+                logger.info("To share exceptional information with the recipient it is recommended to wrap the exception in a QueryExecutionException with provided details.");
+            }
         } else {
             updateMessageBuilder.setPayload(payloadSerializer.apply(subscriptionQueryUpdateMessage));
         }
@@ -186,108 +191,5 @@ public class SubscriptionMessageSerializer {
      */
     public <U> SubscriptionQueryUpdateMessage<U> deserialize(QueryUpdate queryUpdate) {
         return new GrpcBackedQueryUpdateMessage<>(queryUpdate, messageSerializer);
-    }
-
-    /**
-     * Convert a {@link SubscriptionQueryMessage} into a {@link SubscriptionQuery}.
-     *
-     * @param subscriptionQueryMessage the {@link SubscriptionQueryMessage} to convert into a {@link SubscriptionQuery}
-     * @return a {@link SubscriptionQuery} based on the provided {@code subscriptionQueryMessage}
-     * @deprecated in through use of the <a href="https://github.com/AxonIQ/axonserver-connector-java">AxonServer java
-     * connector</a>
-     */
-    @Deprecated
-    public SubscriptionQuery serialize(SubscriptionQueryMessage<?, ?, ?> subscriptionQueryMessage) {
-        QueryRequest queryRequest =
-                QueryRequest.newBuilder()
-                            .setTimestamp(System.currentTimeMillis())
-                            .setMessageIdentifier(subscriptionQueryMessage.getIdentifier())
-                            .setQuery(subscriptionQueryMessage.getQueryName())
-                            .setClientId(configuration.getClientId())
-                            .setComponentName(configuration.getComponentName())
-                            .setPayload(payloadSerializer.apply(subscriptionQueryMessage))
-                            .setResponseType(responseTypeSerializer.apply(subscriptionQueryMessage.getResponseType()))
-                            .putAllMetaData(metadataSerializer.apply(subscriptionQueryMessage.getMetaData()))
-                            .build();
-
-        return SubscriptionQuery.newBuilder()
-                                .setSubscriptionIdentifier(subscriptionQueryMessage.getIdentifier())
-                                .setNumberOfPermits(configuration.getInitialNrOfPermits())
-                                .setUpdateResponseType(
-                                        responseTypeSerializer.apply(subscriptionQueryMessage.getUpdateResponseType())
-                                )
-                                .setQueryRequest(queryRequest).build();
-    }
-
-    /**
-     * @deprecated in through use of the <a href="https://github.com/AxonIQ/axonserver-connector-java">AxonServer java
-     * connector</a>
-     */
-    @Deprecated
-    QueryProviderOutbound serialize(QueryResponseMessage<?> initialResult, String subscriptionId) {
-        QueryResponse.Builder responseBuilder =
-                QueryResponse.newBuilder()
-                             .putAllMetaData(metadataSerializer.apply(initialResult.getMetaData()))
-                             .setMessageIdentifier(initialResult.getIdentifier())
-                             .setRequestIdentifier(subscriptionId);
-        if (initialResult.isExceptional()) {
-            Throwable exceptionResult = initialResult.exceptionResult();
-            responseBuilder.setErrorCode(ErrorCode.QUERY_EXECUTION_ERROR.errorCode());
-            responseBuilder.setErrorMessage(
-                    ExceptionSerializer.serialize(configuration.getClientId(), exceptionResult)
-            );
-            initialResult.exceptionDetails()
-                         .ifPresent(details -> responseBuilder.setPayload(exceptionDetailsSerializer.apply(details)));
-        } else {
-            responseBuilder.setPayload(payloadSerializer.apply(initialResult));
-        }
-
-        return newBuilder().setSubscriptionQueryResponse(
-                SubscriptionQueryResponse.newBuilder()
-                                         .setSubscriptionIdentifier(subscriptionId)
-                                         .setInitialResult(responseBuilder.build())
-        ).build();
-    }
-
-    /**
-     * @deprecated in through use of the <a href="https://github.com/AxonIQ/axonserver-connector-java">AxonServer java
-     * connector</a>
-     */
-    @Deprecated
-    QueryProviderOutbound serializeComplete(String subscriptionId) {
-        QueryUpdateComplete completedQueryUpdate =
-                QueryUpdateComplete.newBuilder()
-                                   .setClientId(configuration.getClientId())
-                                   .setComponentName(configuration.getComponentName())
-                                   .build();
-
-        return newBuilder().setSubscriptionQueryResponse(
-                SubscriptionQueryResponse.newBuilder()
-                                         .setSubscriptionIdentifier(subscriptionId)
-                                         .setComplete(completedQueryUpdate)
-        ).build();
-    }
-
-    /**
-     * @deprecated in through use of the <a href="https://github.com/AxonIQ/axonserver-connector-java">AxonServer java
-     * connector</a>
-     */
-    @Deprecated
-    QueryProviderOutbound serializeCompleteExceptionally(String subscriptionId, Throwable cause) {
-        QueryUpdateCompleteExceptionally exceptionallyCompletedQueryUpdate =
-                QueryUpdateCompleteExceptionally.newBuilder()
-                                                .setErrorMessage(ExceptionSerializer.serialize(
-                                                        configuration.getClientId(), cause
-                                                ))
-                                                .setErrorCode(ErrorCode.QUERY_EXECUTION_ERROR.errorCode())
-                                                .setClientId(configuration.getClientId())
-                                                .setComponentName(configuration.getComponentName())
-                                                .build();
-
-        return newBuilder().setSubscriptionQueryResponse(
-                SubscriptionQueryResponse.newBuilder()
-                                         .setSubscriptionIdentifier(subscriptionId)
-                                         .setCompleteExceptionally(exceptionallyCompletedQueryUpdate)
-        ).build();
     }
 }

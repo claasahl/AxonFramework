@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,26 +16,24 @@
 
 package org.axonframework.deadline.quartz;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import org.axonframework.deadline.DeadlineMessage;
 import org.axonframework.deadline.GenericDeadlineMessage;
+import org.axonframework.deadline.TestScopeDescriptor;
+import org.axonframework.messaging.GenericMessage;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.messaging.ScopeDescriptor;
-import org.axonframework.serialization.JavaSerializer;
 import org.axonframework.serialization.SerializedType;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.SimpleSerializedObject;
+import org.axonframework.serialization.TestSerializer;
 import org.axonframework.serialization.json.JacksonSerializer;
-import org.axonframework.serialization.xml.XStreamSerializer;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.mockito.ArgumentMatcher;
+import org.junit.jupiter.params.*;
+import org.junit.jupiter.params.provider.*;
+import org.mockito.*;
 import org.quartz.JobDataMap;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -57,7 +55,11 @@ class DeadlineJobDataBinderTest {
 
     public DeadlineJobDataBinderTest() {
         DeadlineMessage<String> testDeadlineMessage =
-                GenericDeadlineMessage.asDeadlineMessage(TEST_DEADLINE_NAME, TEST_DEADLINE_PAYLOAD, Instant.now());
+                new GenericDeadlineMessage<>(
+                        TEST_DEADLINE_NAME,
+                        new GenericMessage<>(new MessageType(TEST_DEADLINE_PAYLOAD.getClass()), TEST_DEADLINE_PAYLOAD),
+                        Instant::now
+                );
         testMetaData = MetaData.with("some-key", "some-value");
         this.testDeadlineMessage = testDeadlineMessage.withMetaData(testMetaData);
         testDeadlineScope = new TestScopeDescriptor("aggregate-type", "aggregate-identifier");
@@ -66,12 +68,7 @@ class DeadlineJobDataBinderTest {
     public static Stream<Arguments> serializerImplementationAndAssertionSpecifics() {
         return Stream.of(
                 Arguments.arguments(
-                        spy(JavaSerializer.builder().build()),
-                        (Function<Class, String>) Class::getName,
-                        (Predicate<Object>) Objects::nonNull
-                ),
-                Arguments.arguments(
-                        spy(XStreamSerializer.builder().build()),
+                        spy(TestSerializer.XSTREAM.getSerializer()),
                         (Function<Class, String>) clazz -> clazz.getSimpleName().toLowerCase(),
                         (Predicate<Object>) Objects::isNull
                 ),
@@ -85,7 +82,7 @@ class DeadlineJobDataBinderTest {
 
     @MethodSource("serializerImplementationAndAssertionSpecifics")
     @ParameterizedTest
-    void testToJobData(
+    void toJobDataTest(
             Serializer serializer,
             Function<Class, String> expectedSerializedClassType,
             Predicate<Object> revisionMatcher
@@ -110,10 +107,9 @@ class DeadlineJobDataBinderTest {
         verify(serializer).serialize(testDeadlineScope, byte[].class);
     }
 
-    @SuppressWarnings("unchecked")
     @MethodSource("serializerImplementationAndAssertionSpecifics")
     @ParameterizedTest
-    void testRetrievingDeadlineMessage(
+    void retrievingDeadlineMessage(
             Serializer serializer,
             Function<Class, String> expectedSerializedClassType,
             Predicate<Object> revisionMatcher
@@ -159,7 +155,7 @@ class DeadlineJobDataBinderTest {
 
     @MethodSource("serializerImplementationAndAssertionSpecifics")
     @ParameterizedTest
-    void testRetrievingDeadlineScope(Serializer serializer) {
+    void retrievingDeadlineScope(Serializer serializer) {
         JobDataMap testJobDataMap = toJobData(serializer, testDeadlineMessage, testDeadlineScope);
 
         ScopeDescriptor result = deadlineScope(serializer, testJobDataMap);
@@ -176,58 +172,5 @@ class DeadlineJobDataBinderTest {
                 serializedObject.getContentType().equals(byte[].class) &&
                 type.getName().equals(testDeadlineScope.getClass().getName()) &&
                 type.getRevision() == null;
-    }
-
-    private static class TestScopeDescriptor implements ScopeDescriptor {
-
-        private static final long serialVersionUID = 3584695571254668002L;
-
-        private final String type;
-        private Object identifier;
-
-        @JsonCreator
-        public TestScopeDescriptor(@JsonProperty("type") String type, @JsonProperty("identifier") Object identifier) {
-            this.type = type;
-            this.identifier = identifier;
-        }
-
-        public String getType() {
-            return type;
-        }
-
-        public Object getIdentifier() {
-            return identifier;
-        }
-
-        @Override
-        public String scopeDescription() {
-            return String.format("TestScopeDescriptor for type [%s] and identifier [%s]", type, identifier);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(type, identifier);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (obj == null || getClass() != obj.getClass()) {
-                return false;
-            }
-            final TestScopeDescriptor other = (TestScopeDescriptor) obj;
-            return Objects.equals(this.type, other.type)
-                    && Objects.equals(this.identifier, other.identifier);
-        }
-
-        @Override
-        public String toString() {
-            return "TestScopeDescriptor{" +
-                    "type=" + type +
-                    ", identifier='" + identifier + '\'' +
-                    '}';
-        }
     }
 }

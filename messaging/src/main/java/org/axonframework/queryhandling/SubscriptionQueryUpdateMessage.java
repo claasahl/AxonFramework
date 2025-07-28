@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,23 @@
 
 package org.axonframework.queryhandling;
 
+import jakarta.annotation.Nonnull;
 import org.axonframework.messaging.ResultMessage;
 
 import java.util.Map;
 
 /**
- * Message which holds incremental update of an subscription query.
+ * A {@link ResultMessage} implementation that holds incremental updates of a subscription query.
  *
- * @param <U> type of incremental update
+ * @param <U> The type of {@link #getPayload() update} contained in this {@link SubscriptionQueryUpdateMessage}.
  * @author Milan Savic
- * @since 3.3
+ * @since 3.3.0
  */
 public interface SubscriptionQueryUpdateMessage<U> extends ResultMessage<U> {
 
     @Override
-    SubscriptionQueryUpdateMessage<U> withMetaData(Map<String, ?> metaData);
+    SubscriptionQueryUpdateMessage<U> withMetaData(@Nonnull Map<String, String> metaData);
 
     @Override
-    SubscriptionQueryUpdateMessage<U> andMetaData(Map<String, ?> metaData);
+    SubscriptionQueryUpdateMessage<U> andMetaData(@Nonnull Map<String, String> metaData);
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2014. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,12 +16,16 @@
 
 package org.axonframework.test.aggregate;
 
+import org.axonframework.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.Message;
+import org.axonframework.modelling.command.LegacyRepository;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.function.Consumer;
 
 /**
  * Interface describing the operations available on a test fixture in the execution stage. In this stage, there is only
@@ -30,7 +34,9 @@ import java.util.Map;
  * @param <T> The type of Aggregate under test
  * @author Allard Buijze
  * @since 0.6
+ * @deprecated In favor of the {@link org.axonframework.test.fixture.AxonTestFixture}.
  */
+@Deprecated(since = "5.0.0", forRemoval = true)
 public interface TestExecutor<T> {
 
     /**
@@ -45,25 +51,25 @@ public interface TestExecutor<T> {
     ResultValidator<T> when(Object command);
 
     /**
-     * Dispatches the given command and meta data to the appropriate command handler and records all
+     * Dispatches the given command and meta-data to the appropriate command handler and records all
      * activity in the fixture for result validation. If the given {@code command} is a {@link
      * org.axonframework.commandhandling.CommandMessage} instance, it will be dispatched as-is, with given
      * additional {@code metaData}. Any other object will cause the given {@code command} to be wrapped in a
      * {@code CommandMessage} as its payload.
      *
      * @param command  The command to execute
-     * @param metaData The meta data to attach to the
+     * @param metaData The metadata to attach to the
      * @return a ResultValidator that can be used to validate the resulting actions of the command execution
      */
-    ResultValidator<T> when(Object command, Map<String, ?> metaData);
+    ResultValidator<T> when(Object command, Map<String, String> metaData);
 
     /**
      * Configures the given {@code domainEvents} as the "given" events. These are the events returned by the event
      * store when an aggregate is loaded.
      * <p/>
      * If an item in the given {@code domainEvents} implements {@link Message}, the
-     * payload and meta data from that message are copied into a newly created Domain Event Message. Otherwise, a
-     * Domain Event Message with the item as payload and empty meta data is created.
+     * payload and meta-data from that message are copied into a newly created Domain Event Message. Otherwise, a
+     * Domain Event Message with the item as payload and empty meta-data is created.
      *
      * @param domainEvents the domain events the event store should return
      * @return a TestExecutor instance that can execute the test with this configuration
@@ -74,9 +80,9 @@ public interface TestExecutor<T> {
      * Configures the given {@code domainEvents} as the "given" events. These are the events returned by the event
      * store when an aggregate is loaded.
      * <p/>
-     * If an item in the list implements {@link Message}, the payload and meta data from that
+     * If an item in the list implements {@link Message}, the payload and meta-data from that
      * message are copied into a newly created Domain Event Message. Otherwise, a Domain Event Message with the item
-     * as payload and empty meta data is created.
+     * as payload and empty meta-data is created.
      *
      * @param domainEvents the domain events the event store should return
      * @return a TestExecutor instance that can execute the test with this configuration
@@ -125,42 +131,8 @@ public interface TestExecutor<T> {
      *
      * @param elapsedTime a {@link Duration} specifying the amount of time that will elapse
      * @return a {@link ResultValidator} that can be used to validate the resulting actions of the command execution
-     *
-     * @deprecated in favor of {@link #whenThenTimeElapses(Duration)}. This function incorrectly suggests you can
-     * proceed with other operations after calling it, which is made impossible due to the {@link ResultValidator}
-     * return type
      */
-    @Deprecated
-    default ResultValidator andThenTimeElapses(Duration elapsedTime) {
-        return whenThenTimeElapses(elapsedTime);
-    }
-
-    /**
-     * Simulates the time elapsing in the current given state using a {@link Duration} as the unit of time. This can be
-     * useful when the time between given events is of importance, for example when leveraging the
-     * {@link org.axonframework.deadline.DeadlineManager} to schedule deadlines in the context of a given Aggregate.
-     *
-     * @param elapsedTime a {@link Duration} specifying the amount of time that will elapse
-     * @return a {@link ResultValidator} that can be used to validate the resulting actions of the command execution
-     */
-    ResultValidator whenThenTimeElapses(Duration elapsedTime);
-
-    /**
-     * Simulates the time advancing in the current given state using an {@link Instant} as the unit of time. This can be
-     * useful when the time between given events is of importance, for example when leveraging the
-     * {@link org.axonframework.deadline.DeadlineManager} to schedule deadlines in the context of a given Aggregate.
-     *
-     * @param newPointInTime an {@link Instant} specifying the amount of time to advance the clock to
-     * @return a {@link ResultValidator} that can be used to validate the resulting actions of the command execution
-     *
-     * @deprecated in favor of {@link #whenThenTimeAdvancesTo(Instant)}. This function incorrectly suggests you can
-     * proceed with other operations after calling it, which is made impossible due to the {@link ResultValidator}
-     * return type
-     */
-    @Deprecated
-    default ResultValidator andThenTimeAdvancesTo(Instant newPointInTime) {
-        return whenThenTimeAdvancesTo(newPointInTime);
-    }
+    ResultValidator<T> whenTimeElapses(Duration elapsedTime);
 
     /**
      * Simulates the time advancing in the current given state using an {@link Instant} as the unit of time. This can be
@@ -170,5 +142,43 @@ public interface TestExecutor<T> {
      * @param newPointInTime an {@link Instant} specifying the amount of time to advance the clock to
      * @return a {@link ResultValidator} that can be used to validate the resulting actions of the command execution
      */
-    ResultValidator whenThenTimeAdvancesTo(Instant newPointInTime);
+    ResultValidator<T> whenTimeAdvancesTo(Instant newPointInTime);
+
+    /**
+     * Invokes the given {@code aggregateFactory} expecting an aggregate instance of type {@code T} to be returned.
+     * <p>
+     * All activity is recorded in the fixture for result validation. The {@code aggregateFactory} typically refers to
+     * one of the aggregate's constructors.
+     * <p>
+     * You should use this when-phase operation whenever you do not use the
+     * {@link CommandHandler} annotation on the aggregate's methods, nor have
+     * {@link org.axonframework.test.aggregate.FixtureConfiguration#registerAnnotatedCommandHandler(Object) registered
+     * an external command handler} invoking the {@link LegacyRepository}.
+     *
+     * @param aggregateFactory A callable operation expecting an aggregate instance of type {@code T} to be returned.
+     *                         This typically is an aggregate constructor invocation.
+     * @return a {@link ResultValidator} that can be used to validate the resulting actions of executing the given
+     * {@code aggregateFactory}.
+     */
+    ResultValidator<T> whenConstructing(Callable<T> aggregateFactory);
+
+    /**
+     * Invokes the given {@code aggregateConsumer} after loading an aggregate of type {@code T} based on the given
+     * {@code aggregateIdentifier}.
+     * <p>
+     * All activity is recorded in the fixture for result validation.
+     * <p>
+     * You should use this when-phase operation whenever you do not use the
+     * {@link CommandHandler} annotation on the aggregate's methods, nor have
+     * {@link org.axonframework.test.aggregate.FixtureConfiguration#registerAnnotatedCommandHandler(Object) registered
+     * an external command handler} invoking the {@link LegacyRepository}.
+     *
+     * @param aggregateIdentifier The identifier of the aggregate to
+     *                            {@link LegacyRepository#load(String)}.
+     * @param aggregateConsumer   A lambda providing an aggregate instance of type {@code T} based on the given
+     *                            {@code aggregateIdentifier}.
+     * @return a {@link ResultValidator} that can be used to validate the resulting actions of executing the given
+     * {@code aggregateConsumer}.
+     */
+    ResultValidator<T> whenInvoking(String aggregateIdentifier, Consumer<T> aggregateConsumer);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,21 @@
 
 package org.axonframework.spring.eventsourcing;
 
-import org.axonframework.modelling.command.RepositoryProvider;
+import jakarta.annotation.Nonnull;
 import org.axonframework.common.DirectExecutor;
 import org.axonframework.common.transaction.NoTransactionManager;
 import org.axonframework.common.transaction.TransactionManager;
-import org.axonframework.config.Configuration;
 import org.axonframework.eventsourcing.AggregateSnapshotter;
-import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
 import org.axonframework.messaging.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.HandlerEnhancerDefinition;
-import org.axonframework.messaging.annotation.MultiHandlerDefinition;
 import org.axonframework.messaging.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
+import org.axonframework.modelling.command.RepositoryProvider;
+import org.axonframework.spring.config.annotation.HandlerDefinitionFactoryBean;
+import org.axonframework.spring.config.annotation.SpringBeanDependencyResolverFactory;
 import org.axonframework.spring.config.annotation.SpringBeanParameterResolverFactory;
-import org.axonframework.spring.config.annotation.SpringHandlerDefinitionBean;
-import org.axonframework.spring.config.annotation.SpringHandlerEnhancerDefinitionBean;
 import org.axonframework.spring.messaging.unitofwork.SpringTransactionManager;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.FactoryBean;
@@ -41,8 +40,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
 
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.Executor;
+
+import static org.springframework.beans.factory.BeanFactoryUtils.beansOfTypeIncludingAncestors;
 
 /**
  * Implementation of the {@link org.axonframework.eventsourcing.AggregateSnapshotter} that eases the configuration when
@@ -52,6 +54,7 @@ import java.util.concurrent.Executor;
  * @author Allard Buijze
  * @since 0.6
  */
+// TODO #3105 - Adjust as part of Snapshot Revisioning
 public class SpringAggregateSnapshotterFactoryBean
         implements FactoryBean<SpringAggregateSnapshotter>, ApplicationContextAware {
 
@@ -59,7 +62,7 @@ public class SpringAggregateSnapshotterFactoryBean
     private PlatformTransactionManager transactionManager;
     private ApplicationContext applicationContext;
     private TransactionDefinition transactionDefinition = new DefaultTransactionDefinition();
-    private EventStore eventStore;
+    private LegacyEventStore eventStore;
     private RepositoryProvider repositoryProvider;
     private ParameterResolverFactory parameterResolverFactory;
     private HandlerDefinition handlerDefinition;
@@ -68,35 +71,35 @@ public class SpringAggregateSnapshotterFactoryBean
     public SpringAggregateSnapshotter getObject() {
         if (transactionManager == null) {
             Map<String, PlatformTransactionManager> candidates =
-                    applicationContext.getBeansOfType(PlatformTransactionManager.class);
+                    beansOfTypeIncludingAncestors(applicationContext, PlatformTransactionManager.class);
             if (candidates.size() == 1) {
                 this.transactionManager = candidates.values().iterator().next();
             }
         }
 
         if (eventStore == null) {
-            eventStore = applicationContext.getBean(EventStore.class);
+            eventStore = applicationContext.getBean(LegacyEventStore.class);
         }
 
         if (repositoryProvider == null) {
-            repositoryProvider = applicationContext.getBean(Configuration.class)::repository;
+            repositoryProvider = (RepositoryProvider) null;
         }
 
         if (parameterResolverFactory == null) {
             parameterResolverFactory = MultiParameterResolverFactory
                     .ordered(ClasspathParameterResolverFactory.forClass(getObjectType()),
+                             new SpringBeanDependencyResolverFactory(applicationContext),
                              new SpringBeanParameterResolverFactory(applicationContext));
         }
 
         if (handlerDefinition == null) {
-            HandlerDefinition definitions = new SpringHandlerDefinitionBean(applicationContext).getObject();
-            HandlerEnhancerDefinition enhancers = new SpringHandlerEnhancerDefinitionBean(applicationContext)
+            handlerDefinition = new HandlerDefinitionFactoryBean(new ArrayList<>(beansOfTypeIncludingAncestors(applicationContext, HandlerDefinition.class).values()),
+                                                                 new ArrayList<>(beansOfTypeIncludingAncestors(applicationContext, HandlerEnhancerDefinition.class).values()))
                     .getObject();
-            handlerDefinition = MultiHandlerDefinition.ordered(enhancers, definitions);
         }
 
         TransactionManager txManager = transactionManager == null ? NoTransactionManager.INSTANCE :
-                new SpringTransactionManager(transactionManager, transactionDefinition);
+                                       new SpringTransactionManager(transactionManager, transactionDefinition);
 
         SpringAggregateSnapshotter snapshotter =
                 SpringAggregateSnapshotter.builder()
@@ -147,7 +150,7 @@ public class SpringAggregateSnapshotterFactoryBean
      *
      * @param eventStore The Event Store to store the snapshot events in
      */
-    public void setEventStore(EventStore eventStore) {
+    public void setEventStore(LegacyEventStore eventStore) {
         this.eventStore = eventStore;
     }
 
@@ -170,7 +173,7 @@ public class SpringAggregateSnapshotterFactoryBean
     }
 
     @Override
-    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+    public void setApplicationContext(@Nonnull ApplicationContext applicationContext) throws BeansException {
         this.applicationContext = applicationContext;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package org.axonframework.messaging.unitofwork;
 
-import org.axonframework.utils.MockException;
 import org.axonframework.eventhandling.GenericEventMessage;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.utils.MockException;
+import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,12 +33,11 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class UnitOfWorkNestingTest {
 
-    private List<PhaseTransition> phaseTransitions = new ArrayList<>();
-    private UnitOfWork<?> outer;
-    private UnitOfWork<?> middle;
-    private UnitOfWork<?> inner;
+    private final List<PhaseTransition> phaseTransitions = new ArrayList<>();
+    private LegacyUnitOfWork<?> outer;
+    private LegacyUnitOfWork<?> middle;
+    private LegacyUnitOfWork<?> inner;
 
-    @SuppressWarnings({"unchecked"})
     @BeforeEach
     void setUp() {
         phaseTransitions.clear();
@@ -47,19 +45,21 @@ class UnitOfWorkNestingTest {
             CurrentUnitOfWork.get().rollback();
         }
 
-        outer = new DefaultUnitOfWork(new GenericEventMessage<>("Input 1")) {
+        outer = new LegacyDefaultUnitOfWork<>(new GenericEventMessage<>(new MessageType("event"), "Input 1")) {
             @Override
             public String toString() {
                 return "outer";
             }
         };
-        middle = new DefaultUnitOfWork(new GenericEventMessage<Object>("Input middle")) {
+        middle = new LegacyDefaultUnitOfWork<>(
+                new GenericEventMessage<Object>(new MessageType("event"), "Input middle")
+        ) {
             @Override
             public String toString() {
                 return "middle";
             }
         };
-        inner = new DefaultUnitOfWork(new GenericEventMessage<>("Input 2")) {
+        inner = new LegacyDefaultUnitOfWork<>(new GenericEventMessage<>(new MessageType("event"), "Input 2")) {
             @Override
             public String toString() {
                 return "inner";
@@ -70,12 +70,14 @@ class UnitOfWorkNestingTest {
         registerListeners(inner);
     }
 
-    private void registerListeners(UnitOfWork<?> unitOfWork) {
-        unitOfWork.onPrepareCommit(u -> phaseTransitions.add(new PhaseTransition(u, UnitOfWork.Phase.PREPARE_COMMIT)));
-        unitOfWork.onCommit(u -> phaseTransitions.add(new PhaseTransition(u, UnitOfWork.Phase.COMMIT)));
-        unitOfWork.afterCommit(u -> phaseTransitions.add(new PhaseTransition(u, UnitOfWork.Phase.AFTER_COMMIT)));
-        unitOfWork.onRollback(u -> phaseTransitions.add(new PhaseTransition(u, UnitOfWork.Phase.ROLLBACK)));
-        unitOfWork.onCleanup(u -> phaseTransitions.add(new PhaseTransition(u, UnitOfWork.Phase.CLEANUP)));
+    private void registerListeners(LegacyUnitOfWork<?> unitOfWork) {
+        unitOfWork.onPrepareCommit(
+                u -> phaseTransitions.add(new PhaseTransition(u, LegacyUnitOfWork.Phase.PREPARE_COMMIT))
+        );
+        unitOfWork.onCommit(u -> phaseTransitions.add(new PhaseTransition(u, LegacyUnitOfWork.Phase.COMMIT)));
+        unitOfWork.afterCommit(u -> phaseTransitions.add(new PhaseTransition(u, LegacyUnitOfWork.Phase.AFTER_COMMIT)));
+        unitOfWork.onRollback(u -> phaseTransitions.add(new PhaseTransition(u, LegacyUnitOfWork.Phase.ROLLBACK)));
+        unitOfWork.onCleanup(u -> phaseTransitions.add(new PhaseTransition(u, LegacyUnitOfWork.Phase.CLEANUP)));
     }
 
     @AfterEach
@@ -84,7 +86,7 @@ class UnitOfWorkNestingTest {
     }
 
     @Test
-    void testInnerUnitOfWorkNotifiedOfOuterCommitFailure() {
+    void innerUnitOfWorkNotifiedOfOuterCommitFailure() {
         outer.onPrepareCommit(u -> {
             inner.start();
             inner.commit();
@@ -92,7 +94,7 @@ class UnitOfWorkNestingTest {
         outer.onCommit(u -> {
             throw new MockException();
         });
-        outer.onCommit(u -> phaseTransitions.add(new PhaseTransition(u, UnitOfWork.Phase.COMMIT, "x")));
+        outer.onCommit(u -> phaseTransitions.add(new PhaseTransition(u, LegacyUnitOfWork.Phase.COMMIT, "x")));
         outer.start();
         try {
             outer.commit();
@@ -101,19 +103,19 @@ class UnitOfWorkNestingTest {
         }
 
         assertFalse(CurrentUnitOfWork.isStarted(), "The UnitOfWork hasn't been correctly cleared");
-        assertEquals(Arrays.asList(new PhaseTransition(outer, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.COMMIT),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.COMMIT, "x"),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.CLEANUP),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.CLEANUP)
+        assertEquals(Arrays.asList(new PhaseTransition(outer, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.COMMIT),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.COMMIT, "x"),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.CLEANUP),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.CLEANUP)
         ), phaseTransitions);
     }
 
     @Test
-    void testInnerUnitOfWorkNotifiedOfOuterPrepareCommitFailure() {
+    void innerUnitOfWorkNotifiedOfOuterPrepareCommitFailure() {
         outer.onPrepareCommit(u -> {
             inner.start();
             inner.commit();
@@ -129,18 +131,18 @@ class UnitOfWorkNestingTest {
         }
 
         assertFalse(CurrentUnitOfWork.isStarted(), "The UnitOfWork hasn't been correctly cleared");
-        assertEquals(Arrays.asList(new PhaseTransition(outer, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.CLEANUP),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.CLEANUP)
+        assertEquals(Arrays.asList(new PhaseTransition(outer, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.CLEANUP),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.CLEANUP)
         ), phaseTransitions);
     }
 
     @Test
-    void testInnerUnitOfWorkNotifiedOfOuterCommit() {
+    void innerUnitOfWorkNotifiedOfOuterCommit() {
         outer.onPrepareCommit(u -> {
             inner.start();
             inner.commit();
@@ -149,19 +151,19 @@ class UnitOfWorkNestingTest {
         outer.commit();
 
         assertFalse(CurrentUnitOfWork.isStarted(), "The UnitOfWork hasn't been correctly cleared");
-        assertEquals(Arrays.asList(new PhaseTransition(outer, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.COMMIT),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.AFTER_COMMIT),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.AFTER_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.CLEANUP),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.CLEANUP)
+        assertEquals(Arrays.asList(new PhaseTransition(outer, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.COMMIT),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.AFTER_COMMIT),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.AFTER_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.CLEANUP),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.CLEANUP)
         ), phaseTransitions);
     }
 
     @Test
-    void testInnerUnitRollbackDoesNotAffectOuterCommit() {
+    void innerUnitRollbackDoesNotAffectOuterCommit() {
         outer.onPrepareCommit(u -> {
             inner.start();
             inner.rollback(new MockException());
@@ -170,17 +172,17 @@ class UnitOfWorkNestingTest {
         outer.commit();
 
         assertFalse(CurrentUnitOfWork.isStarted(), "The UnitOfWork hasn't been correctly cleared");
-        assertEquals(Arrays.asList(new PhaseTransition(outer, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.COMMIT),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.AFTER_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.CLEANUP),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.CLEANUP)
+        assertEquals(Arrays.asList(new PhaseTransition(outer, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.COMMIT),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.AFTER_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.CLEANUP),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.CLEANUP)
         ), phaseTransitions);
     }
 
     @Test
-    void testRollbackOfMiddleUnitOfWorkRollsBackInner() {
+    void rollbackOfMiddleUnitOfWorkRollsBackInner() {
         outer.onPrepareCommit(u -> {
             middle.start();
             inner.start();
@@ -194,29 +196,29 @@ class UnitOfWorkNestingTest {
         assertTrue(inner.isRolledBack(), "The inner UnitOfWork hasn't been correctly marked as rolled back");
         assertFalse(outer.isRolledBack(), "The out UnitOfWork has been incorrectly marked as rolled back");
         assertFalse(CurrentUnitOfWork.isStarted(), "The UnitOfWork hasn't been correctly cleared");
-        assertEquals(Arrays.asList(new PhaseTransition(outer, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.COMMIT),
+        assertEquals(Arrays.asList(new PhaseTransition(outer, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.COMMIT),
                                    // important that the inner has been given a rollback signal
-                                   new PhaseTransition(inner, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(middle, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.COMMIT),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.AFTER_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.CLEANUP),
-                                   new PhaseTransition(middle, UnitOfWork.Phase.CLEANUP),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.CLEANUP)
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(middle, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.COMMIT),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.AFTER_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.CLEANUP),
+                                   new PhaseTransition(middle, LegacyUnitOfWork.Phase.CLEANUP),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.CLEANUP)
         ), phaseTransitions);
     }
 
     @Test
-    void testInnerUnitCommitFailureDoesNotAffectOuterCommit() {
+    void innerUnitCommitFailureDoesNotAffectOuterCommit() {
         outer.onPrepareCommit(u -> {
             inner.start();
             inner.onCommit(uow -> {
                 throw new MockException();
             });
             // commits are invoked in reverse order, so we expect to see this one, but not the previously registered handler
-            inner.onCommit(uow -> phaseTransitions.add(new PhaseTransition(inner, UnitOfWork.Phase.COMMIT, "x")));
+            inner.onCommit(uow -> phaseTransitions.add(new PhaseTransition(inner, LegacyUnitOfWork.Phase.COMMIT, "x")));
             try {
                 inner.commit();
             } catch (MockException e) {
@@ -227,28 +229,28 @@ class UnitOfWorkNestingTest {
         outer.commit();
 
         assertFalse(CurrentUnitOfWork.isStarted(), "The UnitOfWork hasn't been correctly cleared");
-        assertEquals(Arrays.asList(new PhaseTransition(outer, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.PREPARE_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.COMMIT, "x"),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.ROLLBACK),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.COMMIT),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.AFTER_COMMIT),
-                                   new PhaseTransition(inner, UnitOfWork.Phase.CLEANUP),
-                                   new PhaseTransition(outer, UnitOfWork.Phase.CLEANUP)
+        assertEquals(Arrays.asList(new PhaseTransition(outer, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.PREPARE_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.COMMIT, "x"),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.ROLLBACK),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.COMMIT),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.AFTER_COMMIT),
+                                   new PhaseTransition(inner, LegacyUnitOfWork.Phase.CLEANUP),
+                                   new PhaseTransition(outer, LegacyUnitOfWork.Phase.CLEANUP)
         ), phaseTransitions);
     }
 
     private static class PhaseTransition {
 
-        private final UnitOfWork.Phase phase;
-        private final UnitOfWork<?> unitOfWork;
+        private final LegacyUnitOfWork.Phase phase;
+        private final LegacyUnitOfWork<?> unitOfWork;
         private final String id;
 
-        public PhaseTransition(UnitOfWork<?> unitOfWork, UnitOfWork.Phase phase) {
+        public PhaseTransition(LegacyUnitOfWork<?> unitOfWork, LegacyUnitOfWork.Phase phase) {
             this(unitOfWork, phase, "");
         }
 
-        public PhaseTransition(UnitOfWork<?> unitOfWork, UnitOfWork.Phase phase, String id) {
+        public PhaseTransition(LegacyUnitOfWork<?> unitOfWork, LegacyUnitOfWork.Phase phase, String id) {
             this.unitOfWork = unitOfWork;
             this.phase = phase;
             this.id = id.length() > 0 ? " " + id : id;

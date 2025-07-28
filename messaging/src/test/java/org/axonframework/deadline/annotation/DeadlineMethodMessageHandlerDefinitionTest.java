@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,11 @@ package org.axonframework.deadline.annotation;
 
 import org.axonframework.deadline.GenericDeadlineMessage;
 import org.axonframework.eventhandling.AnnotationEventHandlerAdapter;
-import org.axonframework.eventhandling.EventHandler;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.StubProcessingContext;
+import org.junit.jupiter.api.*;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -34,31 +36,38 @@ class DeadlineMethodMessageHandlerDefinitionTest {
     @BeforeEach
     void setUp() {
         listener = new Listener();
-        handlerAdapter = new AnnotationEventHandlerAdapter(listener);
+        handlerAdapter = new AnnotationEventHandlerAdapter(listener, new ClassBasedMessageTypeResolver());
     }
 
     @Test
-    void testDeadlineManagerIsEvaluatedBeforeGenericEventHandler() throws Exception {
-        handlerAdapter.handle(new GenericDeadlineMessage<>("someDeadline", "test"));
+    void deadlineManagerIsEvaluatedBeforeGenericEventHandler() throws Exception {
+        GenericDeadlineMessage<String> event = new GenericDeadlineMessage<>(
+                "someDeadline", new MessageType("deadline"), "test"
+        );
+        handlerAdapter.handleSync(event, StubProcessingContext.forMessage(event));
 
         assertThat("Deadline handler is invoked", listener.deadlineCounter.get() == 1);
         assertThat("Event handler was not invoked", listener.eventCounter.get() == 0);
     }
 
     @Test
-    void testNamedDeadlineManagerIsEvaluatedBeforeGenericOne() throws Exception {
-        handlerAdapter.handle(new GenericDeadlineMessage<>("specificDeadline", "test"));
+    void namedDeadlineManagerIsEvaluatedBeforeGenericOne() throws Exception {
+        GenericDeadlineMessage<String> event = new GenericDeadlineMessage<>(
+                "specificDeadline", new MessageType("deadline"), "test"
+        );
+        handlerAdapter.handleSync(event, StubProcessingContext.forMessage(event));
 
         assertThat("Generic Deadline handler was not invoked", listener.deadlineCounter.get() == 0);
         assertThat("Specific Deadline handler was invoked", listener.specificDeadlineCounter.get() == 1);
     }
 
 
-    private class Listener {
+    @SuppressWarnings("unused")
+    private static class Listener {
 
-        private AtomicInteger eventCounter = new AtomicInteger();
-        private AtomicInteger deadlineCounter = new AtomicInteger();
-        private AtomicInteger specificDeadlineCounter = new AtomicInteger();
+        private final AtomicInteger eventCounter = new AtomicInteger();
+        private final AtomicInteger deadlineCounter = new AtomicInteger();
+        private final AtomicInteger specificDeadlineCounter = new AtomicInteger();
 
         @EventHandler
         public void handleA(String event) {

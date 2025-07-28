@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@
 package org.axonframework.test.aggregate;
 
 import org.axonframework.commandhandling.CommandBus;
-import org.axonframework.commandhandling.CommandHandler;
+import org.axonframework.commandhandling.annotation.CommandHandler;
+import org.axonframework.modelling.command.AggregateCreationPolicy;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.eventsourcing.EventSourcingHandler;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.modelling.command.CreationPolicy;
+import org.junit.jupiter.api.*;
 
 import java.util.concurrent.Executor;
 
@@ -43,7 +44,8 @@ class FixtureTest_Resources {
     }
 
     @Test
-    void testResourcesAreScopedToSingleTest_ConstructorPartOne() {
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void resourcesAreScopedToSingleTest_ConstructorPartOne() {
         // executing the same test should pass, as resources are scoped to a single test only
         final Executor resource = mock(Executor.class);
         fixture.registerInjectableResource(resource)
@@ -55,12 +57,14 @@ class FixtureTest_Resources {
     }
 
     @Test
-    void testResourcesAreScopedToSingleTest_ConstructorPartTwo() {
-        testResourcesAreScopedToSingleTest_ConstructorPartOne();
+    @Disabled("TODO #3073 - Revisit Aggregate Test Fixture")
+    void resourcesAreScopedToSingleTest_ConstructorPartTwo() {
+        resourcesAreScopedToSingleTest_ConstructorPartOne();
     }
 
     @Test
-    void testResourcesAreScopedToSingleTest_MethodPartOne() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void resourcesAreScopedToSingleTest_MethodPartOne() {
         // executing the same test should pass, as resources are scoped to a single test only
         final Executor resource = mock(Executor.class);
         fixture.registerInjectableResource(resource)
@@ -73,8 +77,9 @@ class FixtureTest_Resources {
     }
 
     @Test
-    void testResourcesAreScopedToSingleTest_MethodPartTwo() {
-        testResourcesAreScopedToSingleTest_MethodPartOne();
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void resourcesAreScopedToSingleTest_MethodPartTwo() {
+        resourcesAreScopedToSingleTest_MethodPartOne();
     }
 
     public static class AggregateWithResources {
@@ -83,7 +88,8 @@ class FixtureTest_Resources {
         private String id;
 
         @CommandHandler
-        public AggregateWithResources(CreateAggregateCommand cmd, Executor resource, CommandBus commandBus) {
+        @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+        public void handle(CreateAggregateCommand cmd, Executor resource, CommandBus commandBus) {
             apply(new MyEvent(cmd.getAggregateIdentifier(), 1));
             resource.execute(() -> fail("Should not really be executed"));
         }

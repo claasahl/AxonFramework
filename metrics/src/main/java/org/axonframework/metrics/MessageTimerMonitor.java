@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2016. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,15 +20,22 @@ import com.codahale.metrics.Clock;
 import com.codahale.metrics.ExponentiallyDecayingReservoir;
 import com.codahale.metrics.Metric;
 import com.codahale.metrics.MetricSet;
+import com.codahale.metrics.Reservoir;
 import com.codahale.metrics.Timer;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.messaging.Message;
 import org.axonframework.monitoring.MessageMonitor;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Supplier;
+import jakarta.annotation.Nonnull;
+
+import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
- * Times allTimer messages, successful and failed messages
+ * A {@link MessageMonitor} which creates {@link Timer} instances for the overall, success, failure and ignored time an
+ * ingested {@link Message} takes.
  *
  * @author Marijn van Zelst
  * @since 3.0
@@ -41,26 +48,36 @@ public class MessageTimerMonitor implements MessageMonitor<Message<?>>, MetricSe
     private final Timer ignoredTimer;
 
     /**
-     * Creates a MessageTimerMonitor using a default clock
+     * Instantiate a Builder to be able to create a {@link MessageTimerMonitor}.
+     * <p>
+     * The {@link Clock} is defaulted to a {@link Clock#defaultClock()} and the {@code reservoirFactory} defaults to
+     * creating a {@link ExponentiallyDecayingReservoir}.
+     *
+     * @return a Builder to be able to create a {@link MessageTimerMonitor}
      */
-    public MessageTimerMonitor() {
-        this(Clock.defaultClock());
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
-     * Creates a MessageTimerMonitor using the provided clock
+     * Instantiate a {@link MessageTimerMonitor} based on the fields contained in the {@link Builder}.
      *
-     * @param clock the clock used to measure the process time of each message
+     * @param builder the {@link Builder} used to instantiate a {@link MessageTimerMonitor} instance
      */
-    public MessageTimerMonitor(Clock clock) {
-        allTimer = new Timer(new ExponentiallyDecayingReservoir(), clock);
-        successTimer = new Timer(new ExponentiallyDecayingReservoir(), clock);
-        failureTimer = new Timer(new ExponentiallyDecayingReservoir(), clock);
-        ignoredTimer = new Timer(new ExponentiallyDecayingReservoir(), clock);
+    protected MessageTimerMonitor(Builder builder) {
+        builder.validate();
+
+        Clock clock = builder.clock;
+        Supplier<Reservoir> reservoirFactory = builder.reservoirFactory;
+
+        allTimer = new Timer(reservoirFactory.get(), clock);
+        successTimer = new Timer(reservoirFactory.get(), clock);
+        failureTimer = new Timer(reservoirFactory.get(), clock);
+        ignoredTimer = new Timer(reservoirFactory.get(), clock);
     }
 
     @Override
-    public MonitorCallback onMessageIngested(Message<?> message) {
+    public MonitorCallback onMessageIngested(@Nonnull Message<?> message) {
         final Timer.Context allTimerContext = this.allTimer.time();
         final Timer.Context successTimerContext = this.successTimer.time();
         final Timer.Context failureTimerContext = this.failureTimer.time();
@@ -94,5 +111,63 @@ public class MessageTimerMonitor implements MessageMonitor<Message<?>>, MetricSe
         metrics.put("failureTimer", failureTimer);
         metrics.put("ignoredTimer", ignoredTimer);
         return metrics;
+    }
+
+    /**
+     * Builder class to instantiate a {@link MessageTimerMonitor}.
+     * <p>
+     * The {@link Clock} is defaulted to a {@link Clock#defaultClock()} and the {@code reservoirFactory} defaults to
+     * creating a {@link ExponentiallyDecayingReservoir}.
+     */
+    public static class Builder {
+
+        private Clock clock = Clock.defaultClock();
+        private Supplier<Reservoir> reservoirFactory = ExponentiallyDecayingReservoir::new;
+
+        /**
+         * Sets the {@link Clock} used to define the processing duration of a given message being pushed through this
+         * {@link MessageMonitor}. Defaults to the {@link Clock#defaultClock}.
+         *
+         * @param clock the {@link Clock} used to define the processing duration of a given message
+         * @return the current Builder instance, for fluent interfacing
+         */
+        public Builder clock(Clock clock) {
+            assertNonNull(clock, "Clock may not be null");
+            this.clock = clock;
+            return this;
+        }
+
+        /**
+         * Sets factory method creating a {@link Reservoir} to be used by the {@link Timer} instances created by this
+         * {@link MessageMonitor}. Defaults to a {@link Supplier} of {@link ExponentiallyDecayingReservoir}.
+         *
+         * @param reservoirFactory a factory method creating a {@link Reservoir} to be used by the {@link Timer}
+         *                         instances created by this {@link MessageMonitor}
+         * @return the current Builder instance, for fluent interfacing
+         */
+        public Builder reservoirFactory(Supplier<Reservoir> reservoirFactory) {
+            assertNonNull(reservoirFactory, "ReservoirFactory may not be null");
+            this.reservoirFactory = reservoirFactory;
+            return this;
+        }
+
+        /**
+         * Initializes a {@link MessageTimerMonitor} as specified through this Builder.
+         *
+         * @return a {@link MessageTimerMonitor} as specified through this Builder
+         */
+        public MessageTimerMonitor build() {
+            return new MessageTimerMonitor(this);
+        }
+
+        /**
+         * Validate whether the fields contained in this Builder as set accordingly.
+         *
+         * @throws AxonConfigurationException if one field is asserted to be incorrect according to the Builder's
+         *                                    specifications
+         */
+        protected void validate() {
+            // No assertions required, kept for overriding
+        }
     }
 }

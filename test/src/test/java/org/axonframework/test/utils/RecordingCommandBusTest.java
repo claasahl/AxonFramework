@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2012. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,20 +16,28 @@
 
 package org.axonframework.test.utils;
 
+import org.axonframework.commandhandling.CommandHandler;
 import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.commandhandling.CommandResultMessage;
 import org.axonframework.commandhandling.GenericCommandMessage;
-import org.axonframework.messaging.MessageHandler;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.QualifiedName;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.junit.jupiter.api.*;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
+ * Test class validating the {@link RecordingCommandBus}.
+ *
  * @author Allard Buijze
  */
 class RecordingCommandBusTest {
+
+    private static final MessageType TEST_TYPE = new MessageType("command");
 
     private RecordingCommandBus testSubject;
 
@@ -39,16 +47,19 @@ class RecordingCommandBusTest {
     }
 
     @Test
-    void testPublishCommand() {
-        testSubject.dispatch(GenericCommandMessage.asCommandMessage("First"));
-        testSubject.dispatch(GenericCommandMessage.asCommandMessage("Second"),
-                             (commandMessage, commandResultMessage) -> {
-                                 if (commandResultMessage.isExceptional()) {
-                                     fail("Didn't expect handling to fail");
-                                 }
-                                 assertNull(commandResultMessage.getPayload(),
-                                         "Expected default callback behavior to invoke onResult(null)");
-                             });
+    void publishCommand() throws Exception {
+        CommandMessage<String> firstTestCommand = new GenericCommandMessage<>(TEST_TYPE, "First");
+        CommandMessage<String> secondTestCommand = new GenericCommandMessage<>(TEST_TYPE, "Second");
+
+        testSubject.dispatch(firstTestCommand, null);
+        var result = testSubject.dispatch(secondTestCommand, null);
+
+        Message<?> commandResultMessage = result.get();
+        if (commandResultMessage instanceof CommandResultMessage cmr && cmr.isExceptional()) {
+            fail("Didn't expect handling to fail");
+        }
+        assertNull(commandResultMessage.getPayload(),
+                   "Expected default callback behavior to invoke onResult(null)");
         List<CommandMessage<?>> actual = testSubject.getDispatchedCommands();
         assertEquals(2, actual.size());
         assertEquals("First", actual.get(0).getPayload());
@@ -56,16 +67,18 @@ class RecordingCommandBusTest {
     }
 
     @Test
-    void testPublishCommandWithCallbackBehavior() {
+    void publishCommandWithCallbackBehavior() throws Exception {
+        CommandMessage<String> firstTestCommand = new GenericCommandMessage<>(TEST_TYPE, "First");
+        CommandMessage<String> secondTestCommand = new GenericCommandMessage<>(TEST_TYPE, "Second");
+
         testSubject.setCallbackBehavior((commandPayload, commandMetaData) -> "callbackResult");
-        testSubject.dispatch(GenericCommandMessage.asCommandMessage("First"));
-        testSubject.dispatch(GenericCommandMessage.asCommandMessage("Second"),
-                             (commandMessage, commandResultMessage) -> {
-                                 if (commandResultMessage.isExceptional()) {
-                                    fail("Didn't expect handling to fail");
-                                 }
-                                 assertEquals("callbackResult", commandResultMessage.getPayload());
-                             });
+        testSubject.dispatch(firstTestCommand, null);
+
+        var commandResultMessage = testSubject.dispatch(secondTestCommand, null).get();
+        if (commandResultMessage instanceof CommandResultMessage cmr && cmr.isExceptional()) {
+            fail("Didn't expect handling to fail");
+        }
+        assertEquals("callbackResult", commandResultMessage.getPayload());
         List<CommandMessage<?>> actual = testSubject.getDispatchedCommands();
         assertEquals(2, actual.size());
         assertEquals("First", actual.get(0).getPayload());
@@ -73,13 +86,14 @@ class RecordingCommandBusTest {
     }
 
     @Test
-    void testRegisterHandler() {
-        MessageHandler<? super CommandMessage<?>> handler = command -> {
+    void registerHandler() {
+        CommandHandler handler = (command, context) -> {
             fail("Did not expect handler to be invoked");
             return null;
         };
-        testSubject.subscribe(String.class.getName(), handler);
+        QualifiedName name = new QualifiedName("test");
+        testSubject.subscribe(name, handler);
         assertTrue(testSubject.isSubscribed(handler));
-        assertTrue(testSubject.isSubscribed(String.class.getName(), handler));
+        assertTrue(testSubject.isSubscribed(name, handler));
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,58 +16,69 @@
 
 package org.axonframework.integrationtests.commandhandling;
 
-import org.axonframework.commandhandling.AnnotationCommandHandlerAdapter;
 import org.axonframework.commandhandling.CommandBus;
+import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.commandhandling.GenericCommandMessage;
 import org.axonframework.commandhandling.SimpleCommandBus;
-import org.axonframework.commandhandling.callbacks.NoOpCallback;
+import org.axonframework.commandhandling.annotation.AnnotatedCommandHandlingComponent;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
-import org.axonframework.eventsourcing.EventSourcingRepository;
+import org.axonframework.eventsourcing.LegacyEventSourcingRepository;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
-import org.axonframework.eventsourcing.eventstore.EmbeddedEventStore;
-import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.LegacyEmbeddedEventStore;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStore;
+import org.axonframework.eventsourcing.eventstore.inmemory.LegacyInMemoryEventStorageEngine;
+import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageType;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
-import static org.axonframework.commandhandling.GenericCommandMessage.asCommandMessage;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/**
- * @author Allard Buijze
- * @author Nakul Mishra
- */
 class EventPublicationOrderTest {
 
     private CommandBus commandBus;
-    private EventStore eventStore;
+    private LegacyEventStore eventStore;
 
     @BeforeEach
     void setUp() {
-        this.commandBus = SimpleCommandBus.builder().build();
-        eventStore = spy(EmbeddedEventStore.builder().storageEngine(new InMemoryEventStorageEngine()).build());
-        EventSourcingRepository<StubAggregate> repository = EventSourcingRepository.builder(StubAggregate.class)
-                                                                                   .eventStore(eventStore)
-                                                                                   .build();
+        this.commandBus = new SimpleCommandBus();
+        eventStore = spy(LegacyEmbeddedEventStore.builder()
+                                                 .storageEngine(new LegacyInMemoryEventStorageEngine())
+                                                 .build());
+        LegacyEventSourcingRepository<StubAggregate> repository =
+                LegacyEventSourcingRepository.builder(StubAggregate.class)
+                                             .eventStore(eventStore)
+                                             .build();
         StubAggregateCommandHandler target = new StubAggregateCommandHandler();
         target.setRepository(repository);
         target.setEventBus(eventStore);
-        new AnnotationCommandHandlerAdapter<>(target).subscribe(commandBus);
+        commandBus.subscribe(new AnnotatedCommandHandlingComponent<>(target));
     }
 
     @Test
-    void testPublicationOrderIsMaintained_AggregateAdded() {
+    @Disabled("TODO #3064 - Deprecated UnitOfWork clean-up")
+    void publicationOrderIsMaintained_AggregateAdded() {
         String aggregateId = UUID.randomUUID().toString();
-        GenericDomainEventMessage<StubAggregateCreatedEvent> event =
-                new GenericDomainEventMessage<>("test", aggregateId, 0, new StubAggregateCreatedEvent(aggregateId));
+        UpdateStubAggregateWithExtraEventCommand testPayload = new UpdateStubAggregateWithExtraEventCommand(aggregateId);
+        CommandMessage<UpdateStubAggregateWithExtraEventCommand> testCommand =
+                new GenericCommandMessage<>(new MessageType("command"), testPayload);
+        DomainEventMessage<StubAggregateCreatedEvent> event = new GenericDomainEventMessage<>(
+                "test", aggregateId, 0, new MessageType("event"),
+                new StubAggregateCreatedEvent(aggregateId)
+        );
         when(eventStore.readEvents(aggregateId)).thenReturn(DomainEventStream.of(event));
         doAnswer(invocation -> Void.class).when(eventStore).publish(isA(EventMessage.class));
-        commandBus.dispatch(
-                asCommandMessage(new UpdateStubAggregateWithExtraEventCommand(aggregateId)), NoOpCallback.INSTANCE
-        );
+
+        CompletableFuture<? extends Message<?>> dispatchingResult = commandBus.dispatch(testCommand, null);
+        assertFalse(dispatchingResult.isCompletedExceptionally(), () -> dispatchingResult.exceptionNow().getMessage());
+
         InOrder inOrder = inOrder(eventStore, eventStore, eventStore);
         inOrder.verify(eventStore).publish(isA(DomainEventMessage.class));
         inOrder.verify(eventStore).publish(argThat(new NotADomainEventMatcher()));

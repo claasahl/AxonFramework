@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,6 @@ import org.axonframework.common.AxonConfigurationException;
  * @since 2.0
  */
 public class PropertyAccessException extends AxonConfigurationException {
-
-    private static final long serialVersionUID = -1360531453606316133L;
 
     /**
      * Initializes the PropertyAccessException with given {@code message} and {@code cause}.

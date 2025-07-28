@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,12 @@
 
 package org.axonframework.eventsourcing;
 
+import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.eventhandling.EventTestUtils;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
-import org.axonframework.eventhandling.GenericEventMessage;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.LegacyEventStorageEngine;
+import org.axonframework.messaging.MessageType;
 import org.junit.jupiter.api.*;
 
 import java.time.Instant;
@@ -30,22 +32,21 @@ import static org.mockito.Mockito.*;
 
 class FilteringEventStorageEngineTest {
 
-    private Predicate<EventMessage<?>> filter;
-    private EventStorageEngine mockStorage;
-    private FilteringEventStorageEngine testSubject;
+    private LegacyEventStorageEngine mockStorage;
+    private LegacyFilteringEventStorageEngine testSubject;
 
     @BeforeEach
     void setUp() {
-        filter = m -> m.getPayload().toString().contains("accept");
-        mockStorage = mock(EventStorageEngine.class);
-        testSubject = new FilteringEventStorageEngine(mockStorage, filter);
+        Predicate<EventMessage<?>> filter = m -> m.getPayload().toString().contains("accept");
+        mockStorage = mock(LegacyEventStorageEngine.class);
+        testSubject = new LegacyFilteringEventStorageEngine(mockStorage, filter);
     }
 
     @Test
-    void testEventsFromArrayMatchingAreForwarded() {
-        EventMessage<String> event1 = GenericEventMessage.asEventMessage("accept");
-        EventMessage<String> event2 = GenericEventMessage.asEventMessage("fail");
-        EventMessage<String> event3 = GenericEventMessage.asEventMessage("accept");
+    void eventsFromArrayMatchingAreForwarded() {
+        EventMessage<String> event1 = EventTestUtils.asEventMessage("accept");
+        EventMessage<String> event2 = EventTestUtils.asEventMessage("fail");
+        EventMessage<String> event3 = EventTestUtils.asEventMessage("accept");
 
         testSubject.appendEvents(event1, event2, event3);
 
@@ -53,10 +54,10 @@ class FilteringEventStorageEngineTest {
     }
 
     @Test
-    void testEventsFromListMatchingAreForwarded() {
-        EventMessage<String> event1 = GenericEventMessage.asEventMessage("accept");
-        EventMessage<String> event2 = GenericEventMessage.asEventMessage("fail");
-        EventMessage<String> event3 = GenericEventMessage.asEventMessage("accept");
+    void eventsFromListMatchingAreForwarded() {
+        EventMessage<String> event1 = EventTestUtils.asEventMessage("accept");
+        EventMessage<String> event2 = EventTestUtils.asEventMessage("fail");
+        EventMessage<String> event3 = EventTestUtils.asEventMessage("accept");
 
         testSubject.appendEvents(asList(event1, event2, event3));
 
@@ -64,29 +65,31 @@ class FilteringEventStorageEngineTest {
     }
 
     @Test
-    void testStoreSnapshotDelegated() {
-        GenericDomainEventMessage<Object> snapshot = new GenericDomainEventMessage<>("type", "id", 0, "fail");
+    void storeSnapshotDelegated() {
+        DomainEventMessage<Object> snapshot = new GenericDomainEventMessage<>(
+                "type", "id", 0, new MessageType("snapshot"), "fail"
+        );
         testSubject.storeSnapshot(snapshot);
 
         verify(mockStorage).storeSnapshot(snapshot);
     }
 
     @Test
-    void testCreateTailTokenDelegated() {
+    void createTailTokenDelegated() {
         testSubject.createTailToken();
 
         verify(mockStorage).createTailToken();
     }
 
     @Test
-    void testCreateHeadTokenDelegated() {
+    void createHeadTokenDelegated() {
         testSubject.createHeadToken();
 
         verify(mockStorage).createHeadToken();
     }
 
     @Test
-    void testCreateTokenAtDelegated() {
+    void createTokenAtDelegated() {
         Instant now = Instant.now();
         testSubject.createTokenAt(now);
 

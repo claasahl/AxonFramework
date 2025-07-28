@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2019. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,89 +16,51 @@
 
 package org.axonframework.eventhandling.gateway;
 
-import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.eventhandling.EventBus;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import org.axonframework.eventhandling.EventMessage;
-import org.axonframework.messaging.MessageDispatchInterceptor;
+import org.axonframework.eventhandling.EventSink;
+import org.axonframework.messaging.MessageTypeResolver;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
- * Default implementation of the EventGateway interface. It allow configuration of
- * {@link MessageDispatchInterceptor EventDispatchInterceptors}.
- * The Event Dispatch Interceptors can intercept and alter events dispatched on this specific gateway. Typically,
- * this would be used to add gateway specific meta data to the Event.
+ * Default implementation of the {@link EventGateway} interface using the {@link EventSink} to publish events.
  *
  * @author Bert laverman
- * @since 4.1
+ * @author Mitchell Herrijgers
+ * @since 4.1.0
  */
-public class DefaultEventGateway extends AbstractEventGateway implements EventGateway {
+public class DefaultEventGateway implements EventGateway {
+
+    private final EventSink eventSink;
+    private final MessageTypeResolver messageTypeResolver;
 
     /**
-     * Instantiate a {@link DefaultEventGateway} based on the fields contained in the {@link Builder}.
-     * <p>
-     * Will assert that the {@link EventBus} is not {@code null} and will throw an {@link AxonConfigurationException}
-     * if this is the case.
+     * Creates a new {@link EventGateway} that uses the given {@code eventSink} to publish events. The
+     * {@code messageTypeResolver} is used to resolve the type of the event if no {@link EventMessage} is provided but a
+     * payload.
      *
-     * @param builder the {@link Builder} used to instantiate a {@link DefaultEventGateway}
-     *                instance
+     * @param eventSink           The {@link EventSink} to publish events to.
+     * @param messageTypeResolver The {@link MessageTypeResolver} to resolve the type of the event.
      */
-    protected DefaultEventGateway(Builder builder) {
-        super(builder);
-    }
-
-    /**
-     * Instantiate a Builder to be able to create a {@link DefaultEventGateway}.
-     * <p>
-     * The {@code dispatchInterceptors} are defaulted to an empty list.
-     * The {@link EventBus} is a <b>hard requirement</b> and as such should be provided.
-     *
-     * @return a Builder to be able to create a {@link DefaultEventGateway}
-     */
-    public static Builder builder() {
-        return new Builder();
+    public DefaultEventGateway(@Nonnull EventSink eventSink,
+                               @Nonnull MessageTypeResolver messageTypeResolver) {
+        this.eventSink = Objects.requireNonNull(eventSink, "EventSink may not be null");
+        this.messageTypeResolver = Objects.requireNonNull(messageTypeResolver, "MessageTypeResolver may not be null");
     }
 
     @Override
-    public void publish(List<?> events) {
-        events.forEach(this::publish);
-    }
-
-    /**
-     * A Builder class for {@link DefaultEventGateway}s.
-     * <p>
-     * The {@code dispatchInterceptors} are defaulted to an empty list.
-     * The {@link EventBus} is a <b>hard requirement</b> and as such should be provided.
-     */
-    public static class Builder extends AbstractEventGateway.Builder {
-
-        @Override
-        public Builder eventBus(EventBus eventBus) {
-            super.eventBus(eventBus);
-            return this;
-        }
-
-        @Override
-        public Builder dispatchInterceptors(
-                MessageDispatchInterceptor<? super EventMessage<?>>... dispatchInterceptors) {
-            super.dispatchInterceptors(dispatchInterceptors);
-            return this;
-        }
-
-        @Override
-        public Builder dispatchInterceptors(
-                List<MessageDispatchInterceptor<? super EventMessage<?>>> dispatchInterceptors) {
-            super.dispatchInterceptors(dispatchInterceptors);
-            return this;
-        }
-
-        /**
-         * Initializes a {@link DefaultEventGateway} as specified through this Builder.
-         *
-         * @return a {@link DefaultEventGateway} as specified through this Builder
-         */
-        public DefaultEventGateway build() {
-            return new DefaultEventGateway(this);
-        }
+    public CompletableFuture<Void> publish(@Nullable ProcessingContext context,
+                                           @Nonnull List<?> events) {
+        List<EventMessage<?>> eventMessages =
+                events.stream()
+                      .map(event -> EventPublishingUtils.asEventMessage(event, messageTypeResolver))
+                      .collect(Collectors.toList());
+        return eventSink.publish(context, eventMessages);
     }
 }

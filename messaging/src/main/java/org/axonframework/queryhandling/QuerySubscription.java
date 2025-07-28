@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,20 +21,22 @@ import org.axonframework.messaging.responsetypes.ResponseType;
 
 import java.lang.reflect.Type;
 import java.util.Objects;
+import jakarta.annotation.Nonnull;
 
 /**
  * Encapsulates the identifying fields of a Query Handler when one is subscribed to the
  * {@link org.axonframework.queryhandling.QueryBus}. As such contains the response type of the query handler and the
- * complete handler itself.
- * The first is typically used by the QueryBus to select the right query handler when a query comes in.
- * The latter is used to perform the actual query.
+ * complete handler itself. The first is typically used by the QueryBus to select the right query handler when a query
+ * comes in. The latter is used to perform the actual query.
  *
  * @param <R> the type of response this query subscription contains
+ * @author Steven van Beelen
+ * @since 3.2
  */
-class QuerySubscription<R> {
+public class QuerySubscription<R> {
 
     private final Type responseType;
-    private final MessageHandler<? super QueryMessage<?, R>> queryHandler;
+    private final MessageHandler<? super QueryMessage<?, R>, ? extends QueryResponseMessage<?>> queryHandler;
 
     /**
      * Instantiate a {@link QuerySubscription} with a specific {@code responseType} and {@code queryHandler}.
@@ -42,7 +44,8 @@ class QuerySubscription<R> {
      * @param responseType a {@link java.lang.reflect.Type} as the response type of this subscription
      * @param queryHandler the subscribed {@link org.axonframework.messaging.MessageHandler}
      */
-    QuerySubscription(Type responseType, MessageHandler<? super QueryMessage<?, R>> queryHandler) {
+    public QuerySubscription(@Nonnull Type responseType,
+                             @Nonnull MessageHandler<? super QueryMessage<?, R>, ? extends QueryResponseMessage<?>> queryHandler) {
         this.responseType = responseType;
         this.queryHandler = queryHandler;
     }
@@ -58,15 +61,14 @@ class QuerySubscription<R> {
 
     /**
      * Check if this {@link QuerySubscription} can handle the given {@code queryResponseType}, by calling the
-     * {@link ResponseType#matches(Type)} function on it and providing the
-     * set {@code responseType} of this subscription.
+     * {@link ResponseType#matches(Type)} function on it and providing the set {@code responseType} of this
+     * subscription.
      *
-     * @param queryResponseType a {@link ResponseType} to match this
-     *                          subscriptions it's {@code responseType} against
-     * @return true of the given {@code queryResponseType} its
-     * {@link ResponseType#matches(Type)} returns true, false if otherwise
+     * @param queryResponseType a {@link ResponseType} to match this subscriptions it's {@code responseType} against
+     * @return true of the given {@code queryResponseType} its {@link ResponseType#matches(Type)} returns true, false if
+     * otherwise
      */
-    public boolean canHandle(ResponseType queryResponseType) {
+    public boolean canHandle(@Nonnull ResponseType<?> queryResponseType) {
         return queryResponseType.matches(responseType);
     }
 
@@ -75,7 +77,7 @@ class QuerySubscription<R> {
      *
      * @return the {@link org.axonframework.messaging.MessageHandler} tied to this subscription
      */
-    public MessageHandler<? super QueryMessage<?, R>> getQueryHandler() {
+    public MessageHandler<? super QueryMessage<?, R>, ? extends QueryResponseMessage<?>> getQueryHandler() {
         return queryHandler;
     }
 
@@ -92,7 +94,7 @@ class QuerySubscription<R> {
         if (obj == null || getClass() != obj.getClass()) {
             return false;
         }
-        final QuerySubscription other = (QuerySubscription) obj;
+        final QuerySubscription<?> other = (QuerySubscription<?>) obj;
         return Objects.equals(this.responseType, other.responseType)
                 && Objects.equals(this.queryHandler, other.queryHandler);
     }

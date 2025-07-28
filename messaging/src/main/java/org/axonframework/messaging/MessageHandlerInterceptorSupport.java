@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package org.axonframework.messaging;
 
 import org.axonframework.common.Registration;
 
+import jakarta.annotation.Nonnull;
+
 /**
  * Interface marking components capable of registering Handler Interceptors. Generally, these are Messaging components
  * injected into the receiving end of the communication.
@@ -35,7 +37,7 @@ public interface MessageHandlerInterceptorSupport<T extends Message<?>> {
      * handled Message on the messaging component that it was registered to, prior to invoking the message's handler.
      *
      * @param handlerInterceptor The interceptor to register
-     * @return a Registration, which may be used to remove the unregister the interceptor
+     * @return A Registration, which may be used to deregister the interceptor.
      */
-    Registration registerHandlerInterceptor(MessageHandlerInterceptor<? super T> handlerInterceptor);
+    Registration registerHandlerInterceptor(@Nonnull MessageHandlerInterceptor<? super T> handlerInterceptor);
 }

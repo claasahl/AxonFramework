@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2025. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@
 package org.axonframework.axonserver.connector.query;
 
 import io.axoniq.axonserver.grpc.query.QueryResponse;
+import jakarta.annotation.Nonnull;
 import org.axonframework.axonserver.connector.ErrorCode;
 import org.axonframework.axonserver.connector.util.GrpcMetaData;
 import org.axonframework.axonserver.connector.util.GrpcSerializedObject;
 import org.axonframework.messaging.IllegalPayloadAccessException;
+import org.axonframework.messaging.MessageType;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.queryhandling.QueryResponseMessage;
 import org.axonframework.serialization.LazyDeserializingObject;
@@ -34,9 +36,9 @@ import java.util.function.Supplier;
 /**
  * Wrapper that allows clients to access a gRPC {@link QueryResponse} as a {@link QueryResponseMessage}.
  *
- * @param <R> a generic specifying the type of the {@link QueryResponseMessage}
+ * @param <R> A generic specifying the type of the {@link QueryResponseMessage}.
  * @author Marc Gathier
- * @since 4.0
+ * @since 4.0.0
  */
 public class GrpcBackedResponseMessage<R> implements QueryResponseMessage<R> {
 
@@ -44,14 +46,15 @@ public class GrpcBackedResponseMessage<R> implements QueryResponseMessage<R> {
     private final LazyDeserializingObject<R> serializedPayload;
     private final Throwable exception;
     private final Supplier<MetaData> metaDataSupplier;
+    private final MessageType type;
 
     /**
-     * Instantiate a {@link GrpcBackedResponseMessage} with the given {@code queryResponse}, using the provided {@link
-     * Serializer} to be able to retrieve the payload and {@link MetaData} from it.
+     * Instantiate a {@link GrpcBackedResponseMessage} with the given {@code queryResponse}, using the provided
+     * {@link Serializer} to be able to retrieve the payload and {@link MetaData} from it.
      *
-     * @param queryResponse the {@link QueryResponse} which is being wrapped as a {@link QueryResponseMessage}
-     * @param serializer    the {@link Serializer} used to deserialize the payload and {@link MetaData} from the given
-     *                      {@code queryResponse}
+     * @param queryResponse The {@link QueryResponse} which is being wrapped as a {@link QueryResponseMessage}.
+     * @param serializer    The {@link Serializer} used to deserialize the payload and {@link MetaData} from the given
+     *                      {@code queryResponse}.
      */
     public GrpcBackedResponseMessage(QueryResponse queryResponse, Serializer serializer) {
         this.queryResponse = queryResponse;
@@ -65,21 +68,38 @@ public class GrpcBackedResponseMessage<R> implements QueryResponseMessage<R> {
                                     serializedPayload == null ? () -> null : serializedPayload::getObject)
                 : null;
         this.metaDataSupplier = new GrpcMetaData(queryResponse.getMetaDataMap(), serializer);
+        if (serializedPayload != null) {
+            this.type = new MessageType(
+                    serializer.classForType(new GrpcSerializedObject(queryResponse.getPayload()).getType())
+            );
+        } else {
+            this.type = new MessageType(
+                    queryResponse.getErrorCode()
+            );
+        }
     }
 
     private GrpcBackedResponseMessage(QueryResponse queryResponse,
                                       LazyDeserializingObject<R> serializedPayload,
                                       Throwable exception,
-                                      Supplier<MetaData> metaDataSupplier) {
+                                      Supplier<MetaData> metaDataSupplier,
+                                      MessageType type) {
         this.queryResponse = queryResponse;
         this.serializedPayload = serializedPayload;
         this.exception = exception;
         this.metaDataSupplier = metaDataSupplier;
+        this.type = type;
     }
 
     @Override
     public String getIdentifier() {
         return queryResponse.getMessageIdentifier();
+    }
+
+    @Nonnull
+    @Override
+    public MessageType type() {
+        return this.type;
     }
 
     @Override
@@ -115,14 +135,16 @@ public class GrpcBackedResponseMessage<R> implements QueryResponseMessage<R> {
     }
 
     @Override
-    public GrpcBackedResponseMessage<R> withMetaData(Map<String, ?> metaData) {
-        return new GrpcBackedResponseMessage<>(
-                queryResponse, serializedPayload, exception, () -> MetaData.from(metaData)
-        );
+    public GrpcBackedResponseMessage<R> withMetaData(@Nonnull Map<String, String> metaData) {
+        return new GrpcBackedResponseMessage<>(queryResponse,
+                                               serializedPayload,
+                                               exception,
+                                               () -> MetaData.from(metaData),
+                                               type);
     }
 
     @Override
-    public GrpcBackedResponseMessage<R> andMetaData(Map<String, ?> metaData) {
+    public GrpcBackedResponseMessage<R> andMetaData(@Nonnull Map<String, String> metaData) {
         return withMetaData(getMetaData().mergedWith(metaData));
     }
 }

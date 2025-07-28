@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2023. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,10 @@
 
 package org.axonframework.eventhandling.tokenstore;
 
+import jakarta.persistence.Basic;
+import jakarta.persistence.Column;
+import jakarta.persistence.Lob;
+import jakarta.persistence.MappedSuperclass;
 import org.axonframework.common.DateTimeUtils;
 import org.axonframework.eventhandling.TrackingToken;
 import org.axonframework.serialization.SerializedObject;
@@ -28,15 +32,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.TemporalAmount;
 import java.util.Objects;
-import javax.persistence.Basic;
-import javax.persistence.Column;
-import javax.persistence.Lob;
-import javax.persistence.MappedSuperclass;
 
 import static org.axonframework.common.DateTimeUtils.formatInstant;
 
 /**
  * Abstract base class of a JPA entry containing a serialized tracking token belonging to a given process.
+ * For use with Jakarta/Hibernate 6 use {@link org.axonframework.eventhandling.tokenstore.jpa.TokenEntry} instead.
  *
  * @param <T> The serialized data type of the token
  * @author Rene de Waele
